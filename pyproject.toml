@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "argmapper"
+version = "0.1.0"
+authors = [
+  { name="Julianna Yuen", email="juliannayuen07@gmail.com" },
+]
+description = "A software for identifying antibiotic resistance genes in bacteria"
+readme = "README.md"
+requires-python = ">=3.13.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICENSE"]
