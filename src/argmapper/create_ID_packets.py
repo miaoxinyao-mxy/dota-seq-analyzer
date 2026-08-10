@@ -38,6 +38,15 @@ def determine_16s_taxonomy(t_line: str, tax_nodes_lists):
     t_line_parsed = t_line.strip().split("\t")        
     tax_lvl_and_name = t_line_parsed[2].split(" (taxid")[0]
 
+    # 2026-08-10: Resolve standard Kraken2 taxid output through the report lookup.
+    # Reason: Kraken2 writes a numeric taxid here, not a rank/name string.
+    if "__" not in tax_lvl_and_name:
+        taxid_node = tax_nodes_lists.get("_taxid", {}).get(t_line_parsed[2].strip())
+        if taxid_node is not None:
+            taxonomy["classifiable"] = True
+            set_all_tax_vals(taxid_node, taxonomy)
+            return taxonomy
+
     # deal with "unclassified" and "root" edge cases
     if tax_lvl_and_name == "unclassified":
         taxonomy["classifiable"] = False

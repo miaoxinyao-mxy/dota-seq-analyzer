@@ -1,12 +1,15 @@
 
 class Node:
     """Defines the Node units of the taxonomy tree"""
-    def __init__(self, tax_name: str, tax_lvl_num: int, tax_lvl_char: str, parent=None):
+    def __init__(self, tax_name: str, tax_lvl_num: int, tax_lvl_char: str, parent=None, tax_id=None):
         self.tax_name = tax_name
         self.tax_lvl_num = tax_lvl_num
         self.tax_lvl_char = tax_lvl_char
         self.parent = parent
         self.children = []
+        # 2026-08-10: Keep Kraken2 taxids on taxonomy nodes for standard output parsing.
+        # Reason: Kraken2 output supplies taxids, while the report supplies names and ranks.
+        self.tax_id = tax_id
 
     def add_child(self, child):
         if isinstance(child, Node):
@@ -40,7 +43,7 @@ def parse_report_line(r_line: str):
     else:
         tax_name = r_line_data[5].strip().split("__")[1]
 
-    return tax_name, tax_lvl_num, tax_lvl_char
+    return tax_name, tax_lvl_num, tax_lvl_char, r_line_data[4].strip()
 
 
 def create_taxonomy_tree(report_filename: str):
@@ -50,18 +53,21 @@ def create_taxonomy_tree(report_filename: str):
     # create lists to store all nodes of a given taxonomy level (e.g. all species-level nodes, genus-level nodes, etc.)
     # to be used later in downstream processing
     nodes_lists = {'R1': [], 'P': [], 'C': [], 'O': [], 'F': [], 'G': [], 'S': []}
+    # 2026-08-10: Add a taxid lookup for standard Kraken2 classification output.
+    # Reason: create_ID_packets receives taxids, not taxonomy names.
+    nodes_lists["_taxid"] = {}
 
     r_file = open(report_filename, 'r')
     prev_node = None
 
     for line in r_file:
-        tax_name, tax_lvl_num, tax_lvl_char = parse_report_line(line)
+        tax_name, tax_lvl_num, tax_lvl_char, tax_id = parse_report_line(line)
 
         # deal with "unclassified" and "root" lines, which are edge cases
         if tax_lvl_num == -1:
             continue
         elif tax_lvl_num == 0:
-            root_node = Node(tax_name, tax_lvl_num, tax_lvl_char)
+            root_node = Node(tax_name, tax_lvl_num, tax_lvl_char, tax_id=tax_id)
             prev_node = root_node
             continue
 
@@ -70,11 +76,12 @@ def create_taxonomy_tree(report_filename: str):
             prev_node = prev_node.parent
 
         # create new node, and connect the parent & child node
-        current_node = Node(tax_name, tax_lvl_num, tax_lvl_char, prev_node)
+        current_node = Node(tax_name, tax_lvl_num, tax_lvl_char, prev_node, tax_id)
         prev_node.add_child(current_node)
 
         # add node to correct node list
         nodes_lists[tax_lvl_char].append(current_node)
+        nodes_lists["_taxid"][tax_id] = current_node
 
         # preparing for iteration over next line
         prev_node = current_node
