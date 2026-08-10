@@ -152,24 +152,24 @@ def main():
     parser = argparse.ArgumentParser()
 
     # take input parameters
-    parser.add_argument("--fwd_fastq", type=str, required=True)
-    parser.add_argument("--rev_fastq", type=str, required=True)
+        # 2026-08-10: Expose paired inputs as R1 and R2 to match sequencing conventions.\n    # Reason: forward/reverse terminology is not the user-facing input model.\n    parser.add_argument("--r1_fastq", type=str, required=True)
+    parser.add_argument("--r2_fastq", type=str, required=True)
     parser.add_argument("--primers_file", type=str, required=True)
 
     args = parser.parse_args()
     
     # make sure input file paths exist
-    if not os.path.exists(args.fwd_fastq):
-        print(f"❌ Error: input file not found: {args.fwd_fastq}")
+    if not os.path.exists(args.r1_fastq):
+        print(f"❌ Error: input file not found: {args.r1_fastq}")
         return
-    if not os.path.exists(args.rev_fastq):
-        print(f"❌ Error: input file not found: {args.rev_fastq}")
+    if not os.path.exists(args.r2_fastq):
+        print(f"❌ Error: input file not found: {args.r2_fastq}")
         return
     if not os.path.exists(args.primers_file):
         print(f"❌ Error: input file not found: {args.primers_file}")
         return
 
-    all_files_valid = check_input_files(args.fwd_fastq, args.rev_fastq, args.primers_file)
+    all_files_valid = check_input_files(args.r1_fastq, args.r2_fastq, args.primers_file)
     if not all_files_valid:
         sys.exit(1)
 

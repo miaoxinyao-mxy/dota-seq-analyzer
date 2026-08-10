@@ -234,13 +234,13 @@ def main():
     parser = argparse.ArgumentParser()
 
     # take input parameters
-    parser.add_argument("--fwd_fastq", type=str, required=True)
-    parser.add_argument("--rev_fastq", type=str, required=True)
+        # 2026-08-10: Expose all paired-read CLI inputs as R1 and R2.\n    # Reason: users provide sequencing reads as R1/R2 files.\n    parser.add_argument("--r1_fastq", type=str, required=True)
+    parser.add_argument("--r2_fastq", type=str, required=True)
     parser.add_argument("--primers_filename", type=str, required=True)
-    parser.add_argument("--fwd_only_16s_fastq", type=str, default="fwd_only_16s.fastq")
-    parser.add_argument("--rev_only_16s_fastq", type=str, default="rev_only_16s.fastq")
-    parser.add_argument("--kraken_fwd_only_16s_fastq", type=str, default="kraken_fwd_only_16s.fastq")
-    parser.add_argument("--kraken_rev_only_16s_fastq", type=str, default="kraken_rev_only_16s.fastq")
+    parser.add_argument("--r1_only_16s_fastq", type=str, default="fwd_only_16s.fastq")
+    parser.add_argument("--r2_only_16s_fastq", type=str, default="rev_only_16s.fastq")
+    parser.add_argument("--kraken_r1_only_16s_fastq", type=str, default="kraken_fwd_only_16s.fastq")
+    parser.add_argument("--kraken_r2_only_16s_fastq", type=str, default="kraken_rev_only_16s.fastq")
     parser.add_argument("--max_shift_primer", type=int, default=4)
     parser.add_argument("--max_mm_primer", type=int, default=4)
     parser.add_argument("--primer_start_num", type=int, default=42)
@@ -248,20 +248,20 @@ def main():
     args = parser.parse_args()
     
     # make sure input file paths exist
-    if not os.path.exists(args.fwd_fastq):
-        print(f"❌ Error: input file not found: {args.fwd_fastq}")
+    if not os.path.exists(args.r1_fastq):
+        print(f"❌ Error: input file not found: {args.r1_fastq}")
         return
-    if not os.path.exists(args.rev_fastq):
-        print(f"❌ Error: input file not found: {args.rev_fastq}")
+    if not os.path.exists(args.r2_fastq):
+        print(f"❌ Error: input file not found: {args.r2_fastq}")
         return
     if not os.path.exists(args.primers_filename):
         print(f"❌ Error: input file not found: {args.primers_filename}")
         return
 
     create_16s_only_fastq(
-        args.fwd_fastq, args.rev_fastq,
-        args.fwd_only_16s_fastq, args.rev_only_16s_fastq,
-        args.kraken_fwd_only_16s_fastq, args.kraken_rev_only_16s_fastq,
+        args.r1_fastq, args.r2_fastq,
+        args.r1_only_16s_fastq, args.r2_only_16s_fastq,
+        args.kraken_r1_only_16s_fastq, args.kraken_r2_only_16s_fastq,
         args.primers_filename, args.max_shift_primer, 
         args.max_mm_primer, args.primer_start_num)
 

@@ -240,8 +240,8 @@ def main():
     parser = argparse.ArgumentParser()
 
     # take input parameters
-    parser.add_argument("--fwd_fastq", type=str, required=True)
-    parser.add_argument("--rev_fastq", type=str, required=True)
+        # 2026-08-10: Expose paired-read CLI inputs as R1 and R2.\n    # Reason: users provide sequencing reads as R1/R2 files.\n    parser.add_argument("--r1_fastq", type=str, required=True)
+    parser.add_argument("--r2_fastq", type=str, required=True)
     parser.add_argument("--primers_filename", type=str, required=True)
     parser.add_argument("--kraken_output", type=str, required=True)
     parser.add_argument("--kraken_report", type=str, required=True)
@@ -252,17 +252,17 @@ def main():
     parser.add_argument("--_16s_packet_filename", type=str, default="_16s_packets")
     parser.add_argument("--arg_packet_filename", type=str, default="arg_packets")
     parser.add_argument("--unclassified_packet_filename", type=str, default="unclassified_packets")
-    parser.add_argument("--arg_rev_fastq", type=str, default="arg_reverse.fastq")
-    parser.add_argument("--unclassified_rev_fastq", type=str, default="unclassified_reverse.fastq")
+    parser.add_argument("--arg_r2_fastq", type=str, default="arg_reverse.fastq")
+    parser.add_argument("--unclassified_r2_fastq", type=str, default="unclassified_reverse.fastq")
 
     args = parser.parse_args()
     
     # make sure input file paths exist
-    if not os.path.exists(args.fwd_fastq):
-        print(f"❌ Error: input file not found: {args.fwd_fastq}")
+    if not os.path.exists(args.r1_fastq):
+        print(f"❌ Error: input file not found: {args.r1_fastq}")
         return
-    if not os.path.exists(args.rev_fastq):
-        print(f"❌ Error: input file not found: {args.rev_fastq}")
+    if not os.path.exists(args.r2_fastq):
+        print(f"❌ Error: input file not found: {args.r2_fastq}")
         return
     if not os.path.exists(args.primers_filename):
         print(f"❌ Error: input file not found: {args.primers_filename}")
@@ -275,11 +275,11 @@ def main():
         return
 
     generate_packets(
-        args.fwd_fastq, args.rev_fastq, args.primers_filename,
+        args.r1_fastq, args.r2_fastq, args.primers_filename,
         args.kraken_output, args.kraken_report,
         args.barcode_len, args.max_shift_primer, args.max_mm_primer, args.primer_start_num,
         args._16s_packet_filename, args.arg_packet_filename, args.unclassified_packet_filename,
-        args.arg_rev_fastq, args.unclassified_rev_fastq
+        args.arg_r2_fastq, args.unclassified_r2_fastq
     )
 
 if __name__ == "__main__":
