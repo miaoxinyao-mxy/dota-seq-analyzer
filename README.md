@@ -4,17 +4,12 @@ DoTA-AMR was developed to analyze single-cell targeted sequencing data generated
 
 ## Installation
 
-Clone the repository and enter the project directory:
+Clone the repository and download the database tracked with Git LFS:
 
 ```bash
-git clone https://github.com/julianna-y/argmapper.git
-cd argmapper
-```
-
-Download the database file tracked with Git LFS:
-
-```bash
-git lfs install
+git clone https://github.com/julianna-y/argmapper.git && \
+cd argmapper && \
+git lfs install && \
 git lfs pull
 ```
 
