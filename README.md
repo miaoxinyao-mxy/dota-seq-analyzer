@@ -4,15 +4,6 @@ DoTA-AMR was developed to analyze single-cell targeted sequencing data generated
 
 PrimerPicker is included as an optional utility for designing multiplex primer pools when validated primer sequences are not already available. It is not required for running DoTA-AMR.
 
-## Repository layout
-
-```text
-src/argmapper/       DoTA-AMR pipeline modules and development configuration
-PrimerPicker/        Optional primer-design utility and original notebooks
-pyproject.toml        Python package metadata
-LICENSE               MIT license
-```
-
 ## DoTA-AMR
 
 ### Inputs
