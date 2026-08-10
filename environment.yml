@@ -1,0 +1,20 @@
+# 2026-08-10: Added a reproducible Conda environment for DoTA-AMR.
+# Reason: install the Python and command-line dependencies in one environment.
+name: dota-amr
+
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+
+dependencies:
+  - python=3.13
+  - pip
+  - pandas
+  - numpy
+  - scipy
+  - matplotlib
+  - biopython
+  - kraken2
+  - blast
+  - primer3
