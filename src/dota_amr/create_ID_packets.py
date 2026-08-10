@@ -108,7 +108,9 @@ def determine_gene_revised(
 
     # first check for exact primer match
     for fwd_primer, rev_primer in primers_to_genes_dict:
-        if rev_primer == r_seq[primer_start_num : len(rev_primer)] and fwd_primer == f_seq[0 : len(fwd_primer)]:
+        # 2026-08-10: Offset the R2 slice end by the expected primer start.
+        # Reason: using len(rev_primer) as an absolute endpoint produces an empty or truncated exact-match slice.
+        if rev_primer == r_seq[primer_start_num : primer_start_num + len(rev_primer)] and fwd_primer == f_seq[0 : len(fwd_primer)]:
             return primers_to_genes_dict[(fwd_primer, rev_primer)]
 
     # if no exact match, then use primer match algorithm to determine gene
