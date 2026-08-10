@@ -1,8 +1,8 @@
 # ARGMapper: AMR mapping for DoTA-Seq
 
-This repository contains ARGMapper, a DoTA-Seq workflow for mapping antibiotic-resistance genes (ARGs) to bacterial taxonomic classifications and visualizing AMR patterns.
+ARGMapper was developed for analysis of single-cell targeted sequencing data based on the DoTA-Seq framework. It identifies bacterial taxa, detects antibiotic-resistance-gene (ARG) signals, and maps ARGs to the taxa and individual cells in a sample.
 
-PrimerPicker is included as an optional utility for designing multiplex PCR primer pools. It is not required for running ARGMapper.
+PrimerPicker is included as an optional utility for designing multiplex primer pools when validated primer sequences are not already available. It is not required for running ARGMapper.
 
 ## Repository layout
 
@@ -15,7 +15,18 @@ LICENSE               MIT license
 
 ## ARGMapper
 
-ARGMapper is intended for paired-end, short-read bacterial samples generated as part of the DoTA-Seq workflow. It uses 16S taxonomic classification, barcode-level processing, ASV information, ARG filtering, optional sub-ARG analysis, and statistical classification to produce per-cell summaries and AMR/ASV–ARG maps.
+### What ARGMapper does
+
+ARGMapper processes paired-end sequencing reads through the following main stages:
+
+1. Extracts reads associated with the targeted regions and sample barcodes.
+2. Identifies the bacterial taxa represented in the sample.
+3. Matches ARG-related reads to individual barcodes.
+4. Summarizes taxonomic and ARG information for each cell.
+5. Filters low-confidence or low-quality assignments.
+6. Produces tables and visualizations showing the distribution of ARGs across bacterial taxa.
+
+The main result is a taxa–ARG map that helps answer questions such as which bacterial taxa carry particular antibiotic-resistance genes and how those associations change between samples or time points.
 
 ### Installation
 
@@ -25,7 +36,15 @@ Create a Python environment with Python 3.13 or newer and install the package fr
 python -m pip install .
 ```
 
-The full pipeline also depends on external DoTA-Seq tools and databases, including Kraken2 and, when sub-ARG analysis is enabled, BLAST. Configure their paths and analysis parameters in `src/argmapper/driver.sh` before running the workflow.
+Installing the Python package alone is not sufficient to run the complete pipeline. The workflow also requires external tools and databases, including Kraken2 and, when sub-ARG analysis is enabled, BLAST.
+
+Before running the pipeline, edit `src/argmapper/driver.sh` to set:
+
+- forward and reverse FASTQ paths
+- the DoTA-Seq primer CSV
+- the output directory
+- taxonomic and sub-ARG database paths
+- optional analysis settings
 
 ### Required inputs
 
@@ -33,25 +52,32 @@ The standard workflow expects:
 
 - forward and reverse FASTQ files
 - a DoTA-Seq primer CSV
+- a taxonomic classification database
 - a sub-ARG database FASTA when sub-ARG analysis is enabled
-- an output directory
-- a Kraken2 16S database
 
-The driver configuration documents the remaining thresholds, file names, and optional stages. The main pipeline entry point is:
+Run the configured pipeline with:
 
 ```bash
 bash src/argmapper/driver.sh
 ```
 
-### Main outputs
+### Outputs
 
-Depending on enabled stages, ARGMapper writes barcode-level TSV summaries, ASV and sub-ARG summaries, filtered count tables, and an AMR/ASV–ARG heat map. The driver prints the output paths when processing finishes.
+Depending on the enabled analysis steps, ARGMapper writes:
+
+- barcode-level summary tables
+- bacterial taxonomic classifications
+- ARG and sub-ARG summary tables
+- filtered confidence and count tables
+- taxa–ARG heat maps and related figures
+
+The driver reports the output paths when processing finishes.
 
 ## Optional: PrimerPicker
 
-PrimerPicker designs multiplex PCR primer pools from a FASTA file, scores primer dimerization, and ranks pools with simulated annealing. It is not needed if primer sequences are already available.
+PrimerPicker is an optional utility for designing multiplex primer pools when validated primer sequences are not already available.
 
-### Requirements
+### Installation
 
 PrimerPicker requires Python 3.10 or newer and the `primer3_core` and `ntthal` executables:
 
@@ -60,20 +86,9 @@ conda create -n primer-picker -c bioconda -c conda-forge primer3 python=3.10
 conda activate primer-picker
 ```
 
-No Biopython, NumPy, joblib, or matplotlib installation is required by the CLI.
+### Usage
 
-### Input and usage
-
-Provide one target per FASTA record:
-
-```text
->gene1
-ATGCGTACGTAGCTAGCTAG...
->gene2
-ATGAAACCCGGGTTTAAA...
-```
-
-From the repository root:
+Provide one target sequence per FASTA record and run:
 
 ```bash
 python PrimerPicker/primer_picker.py targets.fa \
@@ -81,15 +96,19 @@ python PrimerPicker/primer_picker.py targets.fa \
   --seed 123
 ```
 
-The default run generates up to 100 candidate pairs per target, scores dimers with `ntthal`, and performs 200 simulated-annealing runs. Run `python PrimerPicker/primer_picker.py --help` for all options.
+Run `python PrimerPicker/primer_picker.py --help` for additional options.
 
-The main output is `primer_picker_results/top-primer-sets.tsv`. The directory also contains candidate primers, FASTA sequences, dimer scores, and intermediate pickle files. The notebooks in `PrimerPicker/` preserve the original three-stage workflow; the CLI is the recommended entry point.
+### Outputs
+
+The main output is `primer_picker_results/top-primer-sets.tsv`. The output directory also contains candidate primer sequences and dimer-scoring results. The notebooks in `PrimerPicker/` preserve the original workflow.
 
 ## Reproducibility and review
 
 For reproducible analyses, record input files, software versions, command-line options, and random seeds. Primer candidates should be reviewed and experimentally validated before synthesis.
 
 ## Citation
+
+ARGMapper was developed for analysis of single-cell targeted sequencing data based on the DoTA-Seq framework. For the underlying DoTA-Seq method, please cite:
 
 Lan F, Saba J, Ross TD, Zhou Z, Krauska K, Anantharaman K, Landick R, Venturelli OS. Massively parallel single-cell sequencing of diverse microbial populations. *Nature Methods* 21, 228–235 (2024). https://doi.org/10.1038/s41592-023-02157-7
 
