@@ -27,14 +27,16 @@ The taxonomic and AMR reference databases are included with the repository.
 
 ## Output
 
-The primary result is `dota_amr_results.jsonl`. Each line represents one cell and contains its barcode, taxonomic assignment, quality-control measurements, and detected AMR genes or subtypes.
+The primary results are `dota_amr_results.jsonl` and `reports/cell_amr_matrix.tsv`. The JSONL contains one structured record per cell; the TSV contains one row per cell and one column per AMR target, together with taxonomic and quality-control information.
 
 ```bash
 python src/dota_amr/export_results.py \
-  --input_tsv filtered_sub_arg_barcode_summary.tsv \
+  --input_tsv reports/cell_amr_matrix.tsv \
   --primers_file primers.csv \
   --output_jsonl dota_amr_results.jsonl
 ```
+
+Intermediate files are written to `tmp/`, report tables to `reports/`, and figures to `figures/`.
 
 ## Optional: PrimerPicker
 

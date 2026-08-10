@@ -1,6 +1,7 @@
 import subprocess
 import os
 import argparse
+from helper_functions import ensure_output_directories
 import pandas as pd
 MAX_HITS = 500
 
@@ -176,14 +177,20 @@ def main():
 
     # take input parameters
     parser.add_argument("--sub_arg_seqs_list", type=str, required=True)
-    parser.add_argument("--blastn_sub_arg_tsv", type=str, default="blastn_sub_arg.tsv")
-    parser.add_argument("--query_fasta", type=str, default="query_reads.fa")
+    # 2026-08-10: Separate the BLAST report from its query and database intermediates.
+    # Reason: users should see reports while generated BLAST files remain under tmp.
+    parser.add_argument("--blastn_sub_arg_tsv", type=str, default="reports/blastn_sub_arg.tsv")
+    parser.add_argument("--query_fasta", type=str, default="tmp/query_reads.fa")
     parser.add_argument("--input_fasta", type=str, required=True)
-    parser.add_argument("--db", type=str, default="blastn_db")
+    parser.add_argument("--db", type=str, default="tmp/blast_db/dota_amr_arg")
     parser.add_argument("--final_barcode_summary_tsv", type=str, required=True)
     parser.add_argument("--first_gene_column_num", type=int, required=True)
     
     args = parser.parse_args()
+
+    # 2026-08-10: Materialize report and temporary BLAST directories before writing files.
+    # Reason: final annotations and regenerated BLAST artifacts belong in separate locations.
+    ensure_output_directories(args.blastn_sub_arg_tsv, args.query_fasta, args.db)
     
     # make sure input file paths exist
     if not os.path.exists(args.sub_arg_seqs_list):

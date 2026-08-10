@@ -1,6 +1,6 @@
 import math
 import pandas as pd
-from helper_functions import get_arg_names
+from helper_functions import get_arg_names, ensure_output_directories
 import argparse
 import os
 
@@ -104,12 +104,20 @@ def main():
     # take input parameters
     parser.add_argument("--input_arg_barcode_summary_tsv", type=str, required=True)
     parser.add_argument("--primers_file", type=str, required=True)
-    parser.add_argument("--filtered_counts_summary_arg_tsv", type=str, default="filtered_counts_summary_arg.tsv")
-    parser.add_argument("--filtered_binary_summary_arg_tsv", type=str, default="filtered_binary_summary_arg.tsv")
-    parser.add_argument("--stats_filtering_summary_arg_tsv", type=str, default="stats_filtering_summary_arg.tsv")
+    # 2026-08-10: Route ARG-filtering tables to tmp by default.
+    # Reason: they are intermediate inputs to subtyping and JSONL export.
+    parser.add_argument("--filtered_counts_summary_arg_tsv", type=str, default="tmp/filtered_counts_summary_arg.tsv")
+    parser.add_argument("--filtered_binary_summary_arg_tsv", type=str, default="tmp/filtered_binary_summary_arg.tsv")
+    parser.add_argument("--stats_filtering_summary_arg_tsv", type=str, default="tmp/stats_filtering_summary_arg.tsv")
     parser.add_argument("--alpha", type=float, default=0.05)
 
     args = parser.parse_args()
+
+    # 2026-08-10: Materialize the temporary output directory before writing ARG tables.
+    # Reason: the default tmp paths must work in a new result directory.
+    ensure_output_directories(
+        args.filtered_counts_summary_arg_tsv, args.filtered_binary_summary_arg_tsv,
+        args.stats_filtering_summary_arg_tsv)
     
     # make sure input file paths exist
     if not os.path.exists(args.input_arg_barcode_summary_tsv):

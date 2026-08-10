@@ -5,7 +5,7 @@ from typing import List, Dict, Tuple
 import pandas as pd
 from mle_revised import parse_and_analyze_perfect_corrected_revised
 from filter_barcodes import filter_barcodes_in_df
-from helper_functions import get_arg_names
+from helper_functions import get_arg_names, ensure_output_directories
     
 def find_arg_data(packet_list: List[Dict], num_arg_genes: int):
 
@@ -121,8 +121,10 @@ def main():
     parser.add_argument("--b_with_ids_filename", type=str, required=True)
     parser.add_argument("--_16s_packet_filename", type=str, required=True)
     parser.add_argument("--arg_packet_filename", type=str, required=True)
-    parser.add_argument("--unfiltered_tsv_filename", type=str, default = "unfiltered_barcode_summary.tsv")
-    parser.add_argument("--tsv_filename", type=str, default = "barcode_summary.tsv")
+    # 2026-08-10: Route barcode summary intermediates to tmp by default.
+    # Reason: the final user-facing product is exported separately as JSONL.
+    parser.add_argument("--unfiltered_tsv_filename", type=str, default = "tmp/unfiltered_barcode_summary.tsv")
+    parser.add_argument("--tsv_filename", type=str, default = "tmp/barcode_summary.tsv")
     parser.add_argument("--primers_filename", type=str, required=True)
     parser.add_argument("--min_16s_reads", type=int, default = 5)
     parser.add_argument("--max_contam", type=float, default = 0.1)
@@ -137,6 +139,10 @@ def main():
     parser.add_argument("--noise_cutoff_ratio", type=float, default=0.05)
 
     args = parser.parse_args()
+
+    # 2026-08-10: Materialize the temporary output directory before writing summaries.
+    # Reason: the default tmp paths must work in a new result directory.
+    ensure_output_directories(args.unfiltered_tsv_filename, args.tsv_filename)
     
     # make sure input file paths exist
     if not os.path.exists(args.b_with_ids_filename):

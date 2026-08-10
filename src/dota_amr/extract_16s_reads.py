@@ -1,6 +1,6 @@
 from Bio import SeqIO
 from typing import Optional, Tuple
-from helper_functions import open_maybe_gzip
+from helper_functions import open_maybe_gzip, ensure_output_directories
 import argparse
 import os
 
@@ -239,15 +239,23 @@ def main():
     parser.add_argument("--r1_fastq", type=str, required=True)
     parser.add_argument("--r2_fastq", type=str, required=True)
     parser.add_argument("--primers_filename", type=str, required=True)
-    parser.add_argument("--r1_only_16s_fastq", type=str, default="fwd_only_16s.fastq")
-    parser.add_argument("--r2_only_16s_fastq", type=str, default="rev_only_16s.fastq")
-    parser.add_argument("--kraken_r1_only_16s_fastq", type=str, default="kraken_fwd_only_16s.fastq")
-    parser.add_argument("--kraken_r2_only_16s_fastq", type=str, default="kraken_rev_only_16s.fastq")
+    # 2026-08-10: Route generated read files to the temporary-output directory by default.
+    # Reason: intermediate FASTQ files should not clutter the result root.
+    parser.add_argument("--r1_only_16s_fastq", type=str, default="tmp/only_16s_R1.fastq")
+    parser.add_argument("--r2_only_16s_fastq", type=str, default="tmp/only_16s_R2.fastq")
+    parser.add_argument("--kraken_r1_only_16s_fastq", type=str, default="tmp/kraken_R1.fastq")
+    parser.add_argument("--kraken_r2_only_16s_fastq", type=str, default="tmp/kraken_R2.fastq")
     parser.add_argument("--max_shift_primer", type=int, default=4)
     parser.add_argument("--max_mm_primer", type=int, default=4)
     parser.add_argument("--primer_start_num", type=int, default=42)
 
     args = parser.parse_args()
+
+    # 2026-08-10: Materialize the organized output directories before writing files.
+    # Reason: default tmp paths must work in a new result directory.
+    ensure_output_directories(
+        args.r1_only_16s_fastq, args.r2_only_16s_fastq,
+        args.kraken_r1_only_16s_fastq, args.kraken_r2_only_16s_fastq)
     
     # make sure input file paths exist
     if not os.path.exists(args.r1_fastq):

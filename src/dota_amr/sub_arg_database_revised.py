@@ -1,6 +1,6 @@
 import pandas as pd
 import math
-from helper_functions import open_maybe_gzip, get_arg_names
+from helper_functions import open_maybe_gzip, get_arg_names, ensure_output_directories
 from filter_sub_args import run_sub_arg_denoising_pipeline
 from collections import Counter, defaultdict
 from typing import List, Dict, Tuple
@@ -603,23 +603,25 @@ def main():
     parser = argparse.ArgumentParser()
   
     # take input parameters
-    parser.add_argument("--filtered_counts_summary_arg_tsv", type=str, default="filtered_counts_summary_arg.tsv")
+    # 2026-08-10: Route sub-ARG working tables to tmp by default.
+    # Reason: only the exported JSONL and selected reports are final products.
+    parser.add_argument("--filtered_counts_summary_arg_tsv", type=str, default="tmp/filtered_counts_summary_arg.tsv")
     parser.add_argument("--b_with_ids", type=str, required=True)
     parser.add_argument("--arg_packets", type=str, required=True)
     # 2026-08-10: Expose sub-ARG inputs as R1/R2 in the public CLI.
     # Reason: sequencing inputs are named R1 and R2, not forward/reverse.
     parser.add_argument("--r1_fastq", type=str, required=True)
     parser.add_argument("--r2_fastq", type=str, required=True)
-    parser.add_argument("--sub_arg_barcode_summary_tsv", type=str, default="sub_arg_barcode_summary.tsv")
+    parser.add_argument("--sub_arg_barcode_summary_tsv", type=str, default="tmp/sub_arg_barcode_summary.tsv")
     parser.add_argument("--primers_file", type=str, required=True)
-    parser.add_argument("--sub_arg_seqs_list", type=str, default="sub_arg_seqs_list.txt")
-    parser.add_argument("--filtered_sub_arg_barcode_summary_tsv", type=str, default="filtered_sub_arg_barcode_summary.tsv")
+    parser.add_argument("--sub_arg_seqs_list", type=str, default="tmp/sub_arg_seqs_list.txt")
+    parser.add_argument("--filtered_sub_arg_barcode_summary_tsv", type=str, default="reports/cell_amr_matrix.tsv")
     parser.add_argument("--baseline_gene", type=str, required=True)
-    parser.add_argument("--filtered_stats_cells_per_sub_arg_tsv", type=str, default="filtered_stats_cells_per_sub_arg.tsv")
+    parser.add_argument("--filtered_stats_cells_per_sub_arg_tsv", type=str, default="tmp/filtered_stats_cells_per_sub_arg.tsv")
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--max_shift_sub_arg", type=int, default=2)
     parser.add_argument("--max_mm_sub_arg", type=int, default=0)
-    parser.add_argument("--extra_mle_info_sub_arg_tsv", type=str, default="extra_mle_info_sub_arg.tsv")
+    parser.add_argument("--extra_mle_info_sub_arg_tsv", type=str, default="tmp/extra_mle_info_sub_arg.tsv")
     
     parser.add_argument("--p_match", type=float, default=0.90)
     parser.add_argument("--p_none", type=float, default=0.09)
@@ -632,6 +634,13 @@ def main():
 
 
     args = parser.parse_args()
+
+    # 2026-08-10: Materialize temporary and final report directories before writing sub-ARG tables.
+    # Reason: the cell-by-AMR matrix is a report while working tables remain under tmp.
+    ensure_output_directories(
+        args.sub_arg_barcode_summary_tsv, args.sub_arg_seqs_list,
+        args.filtered_sub_arg_barcode_summary_tsv,
+        args.filtered_stats_cells_per_sub_arg_tsv, args.extra_mle_info_sub_arg_tsv)
     
     # make sure input file paths exist
     if not os.path.exists(args.filtered_counts_summary_arg_tsv):

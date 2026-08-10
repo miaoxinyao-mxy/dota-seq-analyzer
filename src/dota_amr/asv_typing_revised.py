@@ -4,7 +4,7 @@ import re
 import pandas as pd
 from collections import defaultdict, Counter
 from typing import List, Dict
-from helper_functions import get_arg_names
+from helper_functions import get_arg_names, ensure_output_directories
 import os
 import argparse
 
@@ -394,14 +394,20 @@ def main():
     # Reason: sequencing inputs are named R1 and R2, not forward/reverse.
     parser.add_argument("--r1_16s_fastq", type=str, required=True)
     parser.add_argument("--r2_16s_fastq", type=str, required=True)
-    parser.add_argument("--asv_barcode_summary_tsv", type=str, default = "asv_barcode_summary.tsv")
-    parser.add_argument("--global_asv_tsv", type=str, default = "global_asv.tsv")
+    # 2026-08-10: Route sequence-variant tables to tmp by default.
+    # Reason: these tables support taxonomic assignment but are not the primary result.
+    parser.add_argument("--asv_barcode_summary_tsv", type=str, default = "tmp/asv_barcode_summary.tsv")
+    parser.add_argument("--global_asv_tsv", type=str, default = "tmp/global_asv.tsv")
     # 2026-08-10: Use parse_bool for predictable CLI behavior.
     # Reason: argparse type=bool treats every non-empty string as True.
     parser.add_argument("--filter_corrupted", type=parse_bool, default=False)
     parser.add_argument("--primers_file", type=str, required=True)
 
     args = parser.parse_args()
+
+    # 2026-08-10: Materialize the temporary output directory before writing ASV tables.
+    # Reason: the default tmp paths must work in a new result directory.
+    ensure_output_directories(args.asv_barcode_summary_tsv, args.global_asv_tsv)
     
     # make sure input file paths exist
     if not os.path.exists(args.barcode_summary_tsv):

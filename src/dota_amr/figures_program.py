@@ -5,7 +5,7 @@ import matplotlib.colors as colors
 import pandas as pd
 from typing import List, Dict, Tuple
 from collections import Counter
-from helper_functions import get_arg_names
+from helper_functions import get_arg_names, ensure_output_directories
 import os
 import argparse
 
@@ -405,18 +405,27 @@ def main():
     parser.add_argument("--asv_barcode_summary_no_sub_args_tsv", type=str, required=True)
     parser.add_argument("--primers_file", type=str, required=True)
     parser.add_argument("--b_with_ids", type=str, required=True)
-    parser.add_argument("--asv_arg_table_tsv", type=str, default="asv_arg_table.tsv")
+    # 2026-08-10: Route plotting summaries to tmp and final images to figures.
+    # Reason: the aggregated taxa-by-AMR table is a plotting intermediate, not the cell-level result.
+    parser.add_argument("--asv_arg_table_tsv", type=str, default="tmp/taxa_amr_summary.tsv")
     parser.add_argument("--global_asv_tsv", type=str, required=True)
-    parser.add_argument("--asv_arg_figure", type=str, default="asv_arg_table.png")
-    parser.add_argument("--barcode_group_size_figure", type=str, default="barcode_group_size_qc.png")
-    parser.add_argument("--primer_balance_figure", type=str, default="primer_balance_qc.png")
+    parser.add_argument("--asv_arg_figure", type=str, default="figures/asv_arg_table.png")
+    parser.add_argument("--barcode_group_size_figure", type=str, default="figures/barcode_group_size_qc.png")
+    parser.add_argument("--primer_balance_figure", type=str, default="figures/primer_balance_qc.png")
     parser.add_argument("--first_gene_column_num", type=int, required=True)
-    parser.add_argument("--global_mle_tax_tsv", type=str, default="global_mle_tax.tsv")
+    parser.add_argument("--global_mle_tax_tsv", type=str, default="tmp/global_mle_tax.tsv")
     parser.add_argument("--arg_threshold", type=float, default=0.01)
     parser.add_argument("--min_cells_per_asv", type=int, default=40)
     parser.add_argument("--figure_dpi", type=int, default=300) 
     
     args = parser.parse_args()
+
+    # 2026-08-10: Materialize figure, report, and temporary directories before plotting.
+    # Reason: visualization products should not clutter the result root.
+    ensure_output_directories(
+        args.asv_arg_table_tsv, args.asv_arg_figure,
+        args.barcode_group_size_figure, args.primer_balance_figure,
+        args.global_mle_tax_tsv)
     
     # make sure input file paths exist
     if not os.path.exists(args.unfiltered_barcode_summary_tsv):

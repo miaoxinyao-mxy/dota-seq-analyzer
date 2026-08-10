@@ -4,7 +4,7 @@ import json
 import os
 import argparse
 from typing import List, Dict
-from helper_functions import open_maybe_gzip
+from helper_functions import open_maybe_gzip, ensure_output_directories
 
 """
 This program converts raw data from fastq and kraken files into 
@@ -232,7 +232,9 @@ def generate_packets(
                 # note that id_f, id_r, & id_t can be used interchangeably, because we already asserted that they're all equal
                 out_16s_packet_file.write(format_packet(id_f, barcode, gene, taxonomy) + "\n")
 
-            elif gene == [0]*23:
+            # 2026-08-10: Derive the unmatched vector from the input primer panel.
+            # Reason: both vector content and length must match the supplied number of ARG targets.
+            elif gene == [0] * max(0, len(primers) - 2):
                 out_unclassified_packet_file.write(format_packet(id_f, barcode, gene, taxonomy) + "\n")
                 out_unclassified_rev_fastq_file.write(f"{id_r_unparsed}\n{r_seq}\n+\n{r_quality}\n")
 
@@ -264,13 +266,22 @@ def main():
     parser.add_argument("--max_mm_primer", type=int, default=4)
     parser.add_argument("--primer_start_num", type=int, default=42)
     parser.add_argument("--barcode_len", type=int, default=20)
-    parser.add_argument("--_16s_packet_filename", type=str, default="_16s_packets")
-    parser.add_argument("--arg_packet_filename", type=str, default="arg_packets")
-    parser.add_argument("--unclassified_packet_filename", type=str, default="unclassified_packets")
-    parser.add_argument("--arg_r2_fastq", type=str, default="arg_reverse.fastq")
-    parser.add_argument("--unclassified_r2_fastq", type=str, default="unclassified_reverse.fastq")
+    # 2026-08-10: Route packet and derived R2 files to tmp by default.
+    # Reason: these files are regenerable pipeline intermediates.
+    parser.add_argument("--_16s_packet_filename", type=str, default="tmp/packets_16s")
+    parser.add_argument("--arg_packet_filename", type=str, default="tmp/packets_arg")
+    parser.add_argument("--unclassified_packet_filename", type=str, default="tmp/packets_unclassified")
+    parser.add_argument("--arg_r2_fastq", type=str, default="tmp/arg_R2.fastq")
+    parser.add_argument("--unclassified_r2_fastq", type=str, default="tmp/unclassified_R2.fastq")
 
     args = parser.parse_args()
+
+    # 2026-08-10: Materialize the organized output directories before writing files.
+    # Reason: default tmp paths must work in a new result directory.
+    ensure_output_directories(
+        args._16s_packet_filename, args.arg_packet_filename,
+        args.unclassified_packet_filename, args.arg_r2_fastq,
+        args.unclassified_r2_fastq)
     
     # make sure input file paths exist
     if not os.path.exists(args.r1_fastq):

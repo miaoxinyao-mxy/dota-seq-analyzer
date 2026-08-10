@@ -2,6 +2,7 @@ from collections import Counter
 from typing import List, Dict, Tuple
 import os
 import argparse
+from helper_functions import ensure_output_directories
 
 def extract_all_b_with_ids(
     _16s_rev_fastq: str, arg_rev_fastq: str, unclassified_rev_fastq: str, 
@@ -120,9 +121,15 @@ def main():
     parser.add_argument("--unclassified_packet_filename", type=str, required=True)
     parser.add_argument("--max_shift_barcode", type=int, default = 1)
     parser.add_argument("--barcode_len", type=int, default=20)
-    parser.add_argument("--b_with_ids_filename", type=str, default = "b_with_ids")
+    # 2026-08-10: Route the barcode-to-read mapping to tmp by default.
+    # Reason: this mapping is an internal input for downstream stages.
+    parser.add_argument("--b_with_ids_filename", type=str, default = "tmp/b_with_ids.txt")
 
     args = parser.parse_args()
+
+    # 2026-08-10: Materialize the temporary output directory before writing the mapping.
+    # Reason: the default tmp path must work in a new result directory.
+    ensure_output_directories(args.b_with_ids_filename)
     
     # make sure input file paths exist
     if not os.path.exists(args._16s_rev_fastq):
