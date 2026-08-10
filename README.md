@@ -34,6 +34,8 @@ Run the complete single-cell workflow from the repository root:
 dotaseq-amr -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results
 ```
 
+This command generates both the single-cell JSONL results and the cell-by-AMR matrix.
+
 To use a custom reference FASTA instead of the included database:
 
 ```bash
@@ -45,13 +47,6 @@ Run `dotaseq-amr --help` for database overrides and the Kraken2 thread option.
 ## Output
 
 The primary results are `dota_amr_results.jsonl` and `reports/cell_amr_matrix.tsv`. The JSONL contains one structured record per cell; the TSV contains one row per cell and one column per AMR target, together with taxonomic and quality-control information.
-
-```bash
-python src/dota_amr/export_results.py \
-  --input_tsv reports/cell_amr_matrix.tsv \
-  --primers_file primers.csv \
-  --output_jsonl dota_amr_results.jsonl
-```
 
 Intermediate files are written to `tmp/`, report tables to `reports/`, and figures to `figures/`.
 
