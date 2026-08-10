@@ -23,10 +23,15 @@ def parse_report_line(r_line: str):
 
     # match taxonomic level to level number
     # note kingdom rank is not included, since only analyzing bacteria
-    match_lvls = {'U':-1, 'R':0, 'R1':1, 'P':2, 'C':3, 'O':4, 'F':5, 'G':6, 'S':7}    
+    match_lvls = {'U':-1, 'R':0, 'D':1, 'R1':1, 'P':2, 'C':3, 'O':4, 'F':5, 'G':6, 'S':7}    
 
     r_line_data = r_line.split("\t")
     tax_lvl_char = r_line_data[3].strip()
+
+    # 2026-08-10: Accept Kraken2's D (domain) rank as the project's R1 rank.
+    # Reason: Kraken2 emits D, while downstream taxonomy objects use R1.
+    if tax_lvl_char == "D":
+        tax_lvl_char = "R1"
     tax_lvl_num = match_lvls[tax_lvl_char]
     
     # deal with "unclassified" and "root" lines, which are edge cases
