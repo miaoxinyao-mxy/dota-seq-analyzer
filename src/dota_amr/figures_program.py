@@ -13,13 +13,15 @@ import argparse
 
 # Primary function for making all 3 figures
 
+# 2026-08-10: Use 30 cells as the default minimum for ASV-level visualization.
+# Reason: a 40-cell cutoff removes all ASV groups from moderate-sized single-cell datasets.
 def make_figures(
     use_asvs_str: str, unfiltered_barcode_summary_tsv: str, final_asv_barcode_summary_tsv: str, 
     asv_barcode_summary_no_sub_args_tsv: str, primers_file: str, 
     b_with_ids: str, asv_arg_table_tsv: str,  
     asv_arg_figure: str, barcode_group_size_figure: str, primer_balance_figure: str,
     first_gene_column_num: int, global_mle_tax_tsv: str, global_asv_tsv: str = None,
-    arg_threshold: float = 0.01, min_cells_per_asv: int = 40, figure_dpi: int = 300):
+    arg_threshold: float = 0.01, min_cells_per_asv: int = 30, figure_dpi: int = 300):
 
     use_asvs = determine_use_asvs(use_asvs_str) # convert use_asvs from yes/no into a bool True/False value
 
@@ -90,6 +92,22 @@ def make_asv_arg_table(
 
     # edit the ASV-ARG table - nullify values below arg threshold
     df_asv_arg.mask(df_asv_arg < arg_threshold, 0, inplace = True)
+
+    # 2026-08-10: Produce an explanatory figure when no heatmap values remain.
+    # Reason: small datasets or strict thresholds can yield an empty/all-zero matrix, which Matplotlib cannot plot with LogNorm.
+    if df_asv_arg.empty or not np.any(df_asv_arg.to_numpy() > 0):
+        fig, axs = plt.subplots(figsize=(8, 3))
+        axs.axis("off")
+        axs.text(
+            0.5,
+            0.5,
+            "No taxonomic groups met the cell and AMR thresholds.",
+            ha="center",
+            va="center",
+        )
+        fig.savefig(asv_arg_figure, bbox_inches="tight", pad_inches=0.3, dpi=figure_dpi)
+        plt.close(fig)
+        return
 
     # plot the ASV-ARG table
     axs = plt.matshow(df_asv_arg.to_numpy(), norm=colors.LogNorm(), cmap = "Blues").axes
@@ -415,7 +433,9 @@ def main():
     parser.add_argument("--first_gene_column_num", type=int, required=True)
     parser.add_argument("--global_mle_tax_tsv", type=str, default="tmp/global_mle_tax.tsv")
     parser.add_argument("--arg_threshold", type=float, default=0.01)
-    parser.add_argument("--min_cells_per_asv", type=int, default=40)
+    # 2026-08-10: Keep the CLI default aligned with the 30-cell ASV visualization threshold.
+    # Reason: command-line and direct function runs must use the same moderate-sample cutoff.
+    parser.add_argument("--min_cells_per_asv", type=int, default=30)
     parser.add_argument("--figure_dpi", type=int, default=300) 
     
     args = parser.parse_args()
