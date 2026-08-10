@@ -1,90 +1,121 @@
-# ARGMapper
+# DoTA-Seq tools: ARGMapper and PrimerPicker
 
-ARGMapper identifies the antibiotic resistance genes \(ARGs\) present  
-in each species of bacteria from a sample.
+This repository contains two companion tools for the DoTA-Seq workflow:
 
-This software is intended to be used for bacteria samples of unknown  
-composition. Single-cell sequencing with short, paired reads should  
-be used. Further, this software was designed for use with the rest  
-of the DoTA-Seq workflow.
+- **ARGMapper** processes paired-end DoTA-Seq reads and links antibiotic-resistance-gene (ARG) signal to bacterial taxonomic classifications.
+- **PrimerPicker** designs multiplex PCR primer pools from a FASTA file, scores primer dimerization, and ranks pools with simulated annealing.
 
-Primary use case: by running this software on the same bacterial sample  
-at two different timepoints, one can observe the horizontal gene  
-transfer \(HGT\).
+The tools are useful together: PrimerPicker can produce candidate pools for a DoTA-Seq experiment, and ARGMapper can analyze the resulting sequencing data at one or more time points to investigate ARG carriage and horizontal gene transfer.
 
-## Quick Start
+## Repository layout
 
-### System Requirements
-
-### Installation & Setup
-
-### Command
-
-Required Inputs:
-\(provided you're using the default of "yes"  
-to both ASVs and sub-ARGs\)
-- R1 FASTQ
-- R2 FASTQ
-- Primers CSV
-- Sub-ARG database FASTA  
-\(to be used for BLAST; omit if not using sub-ARGs\)
-- Output folder
-
-Run the following command:
-```
-argmapper --r1_fastq example_r1.fastq --r2_fastq example_r2.fastq  
---primers example_primers.csv --db_sub_arg_fasta example_db.fasta  
--o output_folder
+```text
+src/argmapper/       ARGMapper pipeline modules and driver configuration
+PrimerPicker/        PrimerPicker CLI and original workflow notebooks
+pyproject.toml        Python package metadata
+LICENSE               MIT license
 ```
 
-The software will print out the paths for the final output files.
+## PrimerPicker
 
-### Interpreting Output
+### Requirements
 
-#### ASV-ARG Heat Map
+PrimerPicker requires Python 3.10 or newer and the `primer3_core` and `ntthal` executables. The simplest installation is through Conda:
 
-Each square shows the % of cells identified as belonging to the  
-given ASV, that have the given sub-ARG.
+```bash
+conda create -n primer-picker -c bioconda -c conda-forge primer3 python=3.10
+conda activate primer-picker
+```
 
-#### Barcode Summary TSV
+No Biopython, NumPy, joblib, or matplotlib installation is required by the CLI.
 
-This shows all MLE taxonomy, ASV, & sub-ARG information on a  
-per-cell basis \(note that each barcode is assumed to be associated  
-with only one cell, and vice versa\)
+### Input
 
-## Software Description
+Provide one target per FASTA record. The record name becomes the target name:
 
-Here we describe the general stages of ARGMapper's pipeline.
+```text
+>gene1
+ATGCGTACGTAGCTAGCTAG...
+>gene2
+ATGAAACCCGGGTTTAAA...
+```
 
-First, Kraken2 is used for initial 16s taxonomic classifications.  
-The software then organizes and processes the data into a  
-barcode-based summary. Next, ASV \(Amplicon Sequence Variant\)  
-information, used for taxonomic classification, is appended to this  
-summary. The software also splits the ARG columns from the barcode summary  
-into sub-ARGs, and then uses BLAST to identify names for each sub-ARG sequence.
+### Run
 
-Statistical algorithms are used throughout the pipeline, for  
-filtering and classification purposes. The final ASV-ARG heat map  
-output shows the magnitude of each sub-ARG's presence in each ASV  
-taxonomic classification of bacteria.
+From the repository root:
 
-For more information on how ARGMapper works, please reference our paper.
+```bash
+python PrimerPicker/primer_picker.py targets.fa \
+  --outdir primer_picker_results \
+  --seed 123
+```
 
-## Optional Parameters
+The default run generates up to 100 candidate pairs per target, scores dimers with `ntthal`, and performs 200 simulated-annealing runs. For a quick test:
 
-Optional parameters for ARGMapper include:
-1) `--threads` 
-2) `--use_asvs`
-3) `--use_sub_args`
-4) `--filter_taxonomic_classifications`
-5) `--filter_low_confidence_single_asvs`
+```bash
+python PrimerPicker/primer_picker.py targets.fa \
+  --num-primers 10 \
+  --anneal-iterations 5 \
+  --anneal-minutes 0.01 \
+  --dimer-jobs 1 \
+  --anneal-jobs 1
+```
 
-There are also other parameters that don't require changes as often.  
-These can be modified directly in the "driver.sh" file.
-These parameters include maximum shifts and/or mismatch values  
-\(for comparing primers, barcodes, and sub-ARG sequences\),  
-filtering limits, and statistical parameters.
+Useful options include `--product-size-range 400-500`, repeated `--exclude TEXT`, `--no-adapters`, `--no-16s`, and explicit executable paths with `--primer3-core PATH` and `--ntthal PATH`. Run `python PrimerPicker/primer_picker.py --help` for the complete list.
+
+### Results
+
+The output directory contains:
+
+- `top-primer-sets.tsv`: ranked primer pools for experimental review
+- `primers.tsv` and `primers.fasta`: all generated candidates
+- `dimerization-deltaGs.tsv`: calculated dimer scores
+- pickle files used to resume or inspect intermediate results
+
+The notebooks in `PrimerPicker/` preserve the original Primer3, dimer-scoring, and simulated-annealing workflow. They are optional; the CLI is the recommended entry point.
+
+## ARGMapper
+
+ARGMapper is intended for paired-end, short-read bacterial samples generated as part of the DoTA-Seq workflow. It uses 16S taxonomic classification, barcode-level processing, ASV information, ARG filtering, optional sub-ARG analysis, and statistical classification to produce per-cell summaries and ASV–ARG visualizations.
+
+### Installation
+
+Create a Python environment with Python 3.13 or newer and install the package from the repository root:
+
+```bash
+python -m pip install .
+```
+
+The full pipeline also depends on external DoTA-Seq tools and databases, including Kraken2 and (when sub-ARG analysis is enabled) BLAST. Configure their paths and analysis parameters in `src/argmapper/driver.sh` before running the workflow.
+
+### Required inputs
+
+The standard workflow expects:
+
+- forward and reverse FASTQ files
+- a DoTA-Seq primer CSV
+- a sub-ARG database FASTA when sub-ARG analysis is enabled
+- an output directory
+- a Kraken2 16S database
+
+The driver configuration documents the remaining thresholds, file names, and optional stages. The main pipeline entry point is:
+
+```bash
+bash src/argmapper/driver.sh
+```
+
+### Main outputs
+
+Depending on enabled stages, ARGMapper writes barcode-level TSV summaries, ASV and sub-ARG summaries, filtered count tables, and an ASV–ARG heat map. The driver prints the output paths when processing finishes.
+
+## Reproducibility and review
+
+Primer selection is computational support for experimental design; inspect the ranked pools and validate them experimentally before synthesis. For reproducible PrimerPicker runs, record the input FASTA, executable versions, command-line options, and random seed.
 
 ## Citation
 
-## Contact Information
+Lan F, Saba J, Ross TD, Zhou Z, Krauska K, Anantharaman K, Landick R, Venturelli OS. Massively parallel single-cell sequencing of diverse microbial populations. *Nature Methods* 21, 228–235 (2024). https://doi.org/10.1038/s41592-023-02157-7
+
+## License
+
+This project is released under the MIT License. See [LICENSE](LICENSE).
