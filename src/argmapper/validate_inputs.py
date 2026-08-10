@@ -152,7 +152,9 @@ def main():
     parser = argparse.ArgumentParser()
 
     # take input parameters
-        # 2026-08-10: Expose paired inputs as R1 and R2 to match sequencing conventions.\n    # Reason: forward/reverse terminology is not the user-facing input model.\n    parser.add_argument("--r1_fastq", type=str, required=True)
+    # 2026-08-10: Expose paired inputs as R1 and R2 to match sequencing conventions.
+    # Reason: forward/reverse terminology is not the user-facing input model.
+    parser.add_argument("--r1_fastq", type=str, required=True)
     parser.add_argument("--r2_fastq", type=str, required=True)
     parser.add_argument("--primers_file", type=str, required=True)
 

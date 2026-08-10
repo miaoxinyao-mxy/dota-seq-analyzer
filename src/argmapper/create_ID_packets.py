@@ -240,7 +240,9 @@ def main():
     parser = argparse.ArgumentParser()
 
     # take input parameters
-        # 2026-08-10: Expose paired-read CLI inputs as R1 and R2.\n    # Reason: users provide sequencing reads as R1/R2 files.\n    parser.add_argument("--r1_fastq", type=str, required=True)
+    # 2026-08-10: Expose paired-read CLI inputs as R1 and R2.
+    # Reason: users provide sequencing reads as R1/R2 files.
+    parser.add_argument("--r1_fastq", type=str, required=True)
     parser.add_argument("--r2_fastq", type=str, required=True)
     parser.add_argument("--primers_filename", type=str, required=True)
     parser.add_argument("--kraken_output", type=str, required=True)

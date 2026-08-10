@@ -213,7 +213,7 @@ def create_16s_only_fastq(
                 trimmed_f_seq = f_seq[len(fwd_primer):]
                 trimmed_r_seq = r_seq[(primer_start_num + len(rev_primer)):]
 
-                # 2026-08-10: Trim quality strings at the same coordinates as sequences.
+            # 2026-08-10: Trim quality strings at the same coordinates as sequences.
                 # Reason: FASTQ sequence and quality lines must have identical lengths.
                 trimmed_f_quality = f_quality[len(fwd_primer):]
                 trimmed_r_quality = r_quality[(primer_start_num + len(rev_primer)):]
@@ -234,7 +234,9 @@ def main():
     parser = argparse.ArgumentParser()
 
     # take input parameters
-        # 2026-08-10: Expose all paired-read CLI inputs as R1 and R2.\n    # Reason: users provide sequencing reads as R1/R2 files.\n    parser.add_argument("--r1_fastq", type=str, required=True)
+    # 2026-08-10: Expose all paired-read CLI inputs as R1 and R2.
+    # Reason: users provide sequencing reads as R1/R2 files.
+    parser.add_argument("--r1_fastq", type=str, required=True)
     parser.add_argument("--r2_fastq", type=str, required=True)
     parser.add_argument("--primers_filename", type=str, required=True)
     parser.add_argument("--r1_only_16s_fastq", type=str, default="fwd_only_16s.fastq")
