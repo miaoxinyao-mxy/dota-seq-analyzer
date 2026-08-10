@@ -22,12 +22,15 @@ def find_arg_data(packet_list: List[Dict]):
 
     return gene_counts
     
+# 2026-08-10: Added defaults to parameters that followed defaulted arguments. Reason: Python otherwise rejects this function before the pipeline can run.
 def write_barcode_summary_to_tsv(b_with_ids_filename: str, 
     _16s_packet_filename: str, arg_packet_filename: str, 
     unfiltered_tsv_filename: str, tsv_filename: str, primers_filename: str,
-    min_16s_reads: int = 5, max_contam: float = 0.1, 
-    p_match, p_none, p_error, alpha_prior, beta_prior,
-    min_confidence, min_noise_reads, noise_cutoff_ratio):
+    min_16s_reads: int = 5, max_contam: float = 0.1,
+    p_match: float = 0.90, p_none: float = 0.09, p_error: float = 0.01,
+    alpha_prior: float = 1.0, beta_prior: float = 9.0,
+    min_confidence: float = 0.95, min_noise_reads: int = 2,
+    noise_cutoff_ratio: float = 0.05):
 
     with open(b_with_ids_filename, 'r') as b_with_ids_file, \
     open(_16s_packet_filename, 'r') as _16s_packet_file, \
