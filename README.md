@@ -13,6 +13,7 @@ git lfs install
 git lfs pull
 conda env create -f environment.yml
 tar -xzf database/dota-amr-taxonomy-db.tar.gz -C database
+tar -xzf database/dota-amr-arg-db.tar.gz -C database
 conda activate dota-seq-amr
 ```
 

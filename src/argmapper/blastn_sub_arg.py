@@ -4,6 +4,29 @@ import argparse
 import pandas as pd
 MAX_HITS = 500
 
+
+# 2026-08-10: Accept the TSV emitted by sub_arg_database_revised.py.
+# Reason: the revised sub-ARG step writes name, cell count, and R1|R2 core sequence.
+def parse_sub_arg_record(line):
+    line = line.strip()
+    if not line or line.startswith("Sub-ARG_Arbitrary_Name"):
+        return None
+
+    fields = line.split("\t")
+    if len(fields) >= 3:
+        name = fields[0]
+        seqs = fields[2]
+    elif ": " in line:
+        name, seqs = line.split(": ", 1)
+    else:
+        raise ValueError("Unrecognized sub-ARG sequence-list format")
+
+    sequences = seqs.split("|")
+    if len(sequences) != 2:
+        raise ValueError("Expected R1|R2 sequences for " + name)
+    return name, sequences[0], sequences[1]
+
+
 def make_summary_table(
     sub_arg_seqs_list, blastn_sub_arg_tsv, query_fasta, input_fasta, db,
     final_barcode_summary_tsv, first_gene_column_num):
@@ -24,9 +47,12 @@ def make_summary_table(
         i = 0
         for line in input:
             i += 1
-            if line.split(": ")[0] in final_gene_names:
-                name, seqs = line.strip().split(": ")
-                f_seq, r_seq = seqs.split("|")
+            record = parse_sub_arg_record(line)
+            if record is None:
+                continue
+
+            name, f_seq, r_seq = record
+            if name in final_gene_names:
                 rows = get_blastn_rows(name, f_seq, r_seq, query_fasta, db)
                 for row in rows:
                     output.write("\t".join(row) + "\n")
@@ -94,6 +120,12 @@ def get_blastn_rows(sub_arg_name, read1_seq, read2_seq, query_fasta, db):
 
     # 4. Full length and 100%.
     rows = []
+
+    # 2026-08-10: Return no hits when BLAST finds fewer than two query reads.
+    # Reason: a paired match requires both R1 and R2; the old slice could raise IndexError.
+    if len(query_order) < 2:
+        return rows
+
     read1_name, read2_name = query_order[:2]
 
     for subject_hits in hits_by_subject.values():
