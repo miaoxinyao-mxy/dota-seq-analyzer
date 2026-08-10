@@ -37,11 +37,10 @@ PrimerPicker is an optional utility for designing multiplex primer pools when va
 
 ### Installation
 
-PrimerPicker requires Python 3.10 or newer and the `primer3_core` and `ntthal` executables:
+PrimerPicker is included in the \`dota-amr\` Conda environment created above:
 
 ```bash
-conda create -n primer-picker -c bioconda -c conda-forge primer3 python=3.10
-conda activate primer-picker
+conda activate dota-amr
 ```
 
 ### Usage
