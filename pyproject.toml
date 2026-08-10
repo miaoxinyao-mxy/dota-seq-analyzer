@@ -19,6 +19,12 @@ classifiers = [
 ]
 license = "MIT"
 license-files = ["LICENSE"]
+
+# 2026-08-10: Install the complete workflow as the public dotaseq-amr command.
+# Reason: users should run paired R1/R2 inputs through one supported entry point.
+[project.scripts]
+dotaseq-amr = "dota_amr.cli:main"
+
 # 2026-08-10: Keep separately distributed databases out of Python package archives.
 # Reason: the repository retrieves reference databases with Git LFS, so embedding them duplicates large files.
 [tool.hatch.build.targets.sdist]

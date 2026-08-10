@@ -15,6 +15,7 @@ conda env create -f environment.yml
 tar -xzf database/dota-amr-taxonomy-db.tar.gz -C database
 tar -xzf database/dota-amr-arg-db.tar.gz -C database
 conda activate dota-seq-amr
+python -m pip install -e .
 ```
 
 ## Inputs
@@ -24,6 +25,23 @@ conda activate dota-seq-amr
 - optionally, a custom AMR reference FASTA for matching detected sequences to known alleles
 
 The taxonomic and AMR reference databases are included with the repository.
+
+## Run DoTA-AMR
+
+Run the complete single-cell workflow from the repository root:
+
+```bash
+dotaseq-amr -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results
+```
+
+The default sub-ARG baseline is `CTX-M`. For a different primer panel, set a target from the primer CSV:
+
+```bash
+dotaseq-amr -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results \
+  --baseline-gene TARGET
+```
+
+Run `dotaseq-amr --help` for database overrides and the Kraken2 thread option.
 
 ## Output
 

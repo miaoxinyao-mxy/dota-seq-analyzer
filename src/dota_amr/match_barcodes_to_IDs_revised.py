@@ -113,9 +113,14 @@ def main():
     parser = argparse.ArgumentParser()
 
     # take input parameters
-    parser.add_argument("--_16s_rev_fastq", type=str, required=True)
-    parser.add_argument("--arg_rev_fastq", type=str, required=True)
-    parser.add_argument("--unclassified_rev_fastq", type=str, required=True)
+    # 2026-08-10: Expose barcode-matching FASTQ inputs with R2 terminology while retaining old aliases.
+    # Reason: users provide sequencing files as R1/R2, and existing commands must remain compatible.
+    parser.add_argument("--r2_16s_fastq", "--_16s_rev_fastq", dest="_16s_rev_fastq", type=str, required=True)
+    parser.add_argument("--arg_r2_fastq", "--arg_rev_fastq", dest="arg_rev_fastq", type=str, required=True)
+    parser.add_argument(
+        "--unclassified_r2_fastq", "--unclassified_rev_fastq",
+        dest="unclassified_rev_fastq", type=str, required=True,
+    )
     parser.add_argument("--_16s_packet_filename", type=str, required=True)
     parser.add_argument("--arg_packet_filename", type=str, required=True)
     parser.add_argument("--unclassified_packet_filename", type=str, required=True)
