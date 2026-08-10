@@ -4,26 +4,16 @@ DoTA-AMR was developed to analyze single-cell targeted sequencing data generated
 
 ## Installation
 
-Clone the repository and download the database tracked with Git LFS:
+Install DoTA-AMR and its database:
 
 ```bash
 git clone https://github.com/julianna-y/argmapper.git && \
 cd argmapper && \
 git lfs install && \
-git lfs pull
-```
-
-Create the Conda environment:
-
-```bash
-conda env create -f environment.yml
+git lfs pull && \
+conda env create -f environment.yml && \
+tar -xzf database/dota-amr-taxonomy-db.tar.gz -C database && \
 conda activate dota-amr
-```
-
-Extract the project taxonomic database before running DoTA-AMR:
-
-```bash
-tar -xzf database/dota-amr-taxonomy-db.tar.gz -C database
 ```
 
 ## DoTA-AMR
