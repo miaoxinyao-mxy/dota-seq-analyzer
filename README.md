@@ -12,8 +12,8 @@ cd argmapper && \
 git lfs install && \
 git lfs pull && \
 conda env create -f environment.yml && \
-tar -xzf database/dota-amr-taxonomy-db.tar.gz -C database && \
-conda activate dota-amr
+tar -xzf database/dota-seq-amr-taxonomy-db.tar.gz -C database && \
+conda activate dota-seq-amr
 ```
 
 ## DoTA-AMR
@@ -37,10 +37,10 @@ PrimerPicker is an optional utility for designing multiplex primer pools when va
 
 ### Installation
 
-PrimerPicker is included in the \`dota-amr\` Conda environment created above:
+PrimerPicker is included in the \`dota-seq-amr\` Conda environment created above:
 
 ```bash
-conda activate dota-amr
+conda activate dota-seq-amr
 ```
 
 ### Usage

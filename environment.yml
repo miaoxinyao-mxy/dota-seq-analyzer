@@ -1,6 +1,6 @@
 # 2026-08-10: Added a reproducible Conda environment for DoTA-AMR.
 # Reason: install the Python and command-line dependencies in one environment.
-name: dota-amr
+name: dota-seq-amr
 
 channels:
   - conda-forge
