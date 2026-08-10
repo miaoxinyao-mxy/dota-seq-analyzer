@@ -13,7 +13,9 @@ from helper_functions import get_arg_names
 # 2026-08-10: Define stable public names for the taxonomy ranks in the TSV lineage.
 # Reason: the final JSONL should expose structured taxa instead of requiring users to parse display text.
 TAXONOMY_RANKS = {
-    "R1": "root",
+    # 2026-08-10: Export the internal R1 rank as domain rather than root.
+    # Reason: taxonomy parsing converts Kraken's D rank to R1, so values such as Bacteria are domains.
+    "R1": "domain",
     "P": "phylum",
     "C": "class",
     "O": "order",
