@@ -1,70 +1,71 @@
-# DoTA-AMR: Mapping antibiotic resistance in single-cell DoTA-Seq data
+# DoTA-Profile
 
-DoTA-AMR links antimicrobial resistance genes to their bacterial hosts in single-cell DoTA-Seq data.
+*Single-cell profiling of targeted microbial genes and phase variation*
+
+DoTA-Profile links primer-defined targets to individual bacterial cells and their taxonomic classifications in single-cell DoTA-Seq data.
 
 ## Installation
 
-Install DoTA-AMR and its reference databases:
-
 ```bash
-git clone https://github.com/miaoxinyao-mxy/dota-amr.git
-cd dota-amr
+git clone https://github.com/miaoxinyao-mxy/dota-profile.git
+cd dota-profile
 git lfs install
 git lfs pull
 conda env create -f environment.yml
-tar -xzf database/dota-amr-taxonomy-db.tar.gz -C database
-tar -xzf database/dota-amr-arg-db.tar.gz -C database
-conda activate dota-seq-amr
+tar -xzf database/dota-profile-taxonomy-db.tar.gz -C database
+conda activate dota-profile
 python -m pip install -e .
 ```
 
-## Inputs
+## Primer file
 
-- paired R1 and R2 FASTQ files
-- a DoTA-Seq primer CSV file
-- optionally, a custom AMR reference FASTA; otherwise, DoTA-AMR uses the included reference database
+The primer CSV contains four columns:
 
-The taxonomic and AMR reference databases are included with the repository.
-
-## Run DoTA-AMR
-
-Run the complete single-cell workflow from the repository root:
-
-```bash
-dotaseq-amr -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results
+```csv
+Primer,F,R,Mode
+16s,F_PRIMER,R_PRIMER,
+target_1,F_PRIMER,R_PRIMER,
+target_2,F_PRIMER,R_PRIMER,ssr
+target_3,F_PRIMER,R_PRIMER,inv
 ```
 
-This command generates both the single-cell JSONL results and the cell-by-AMR matrix.
+Leave `Mode` blank for standard target detection. Use `ssr` or `inv` only for phase-variation targets.
 
-To use a custom reference FASTA instead of the included database:
+## Run
 
 ```bash
-dotaseq-amr -1 reads1.fastq -2 reads2.fastq -p primers.csv -r reference.fa -o results
+dota-profile -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results
 ```
 
-Run `dotaseq-amr --help` for database overrides and the Kraken2 thread option.
+To annotate reconstructed target sequences with a reference FASTA:
+
+```bash
+dota-profile -1 reads1.fastq -2 reads2.fastq -p primers.csv -r reference.fa -o results
+```
+
+An optional AMR reference is included in `database/amr-reference-db.tar.gz`.
+
+When an `inv` target and a complete corresponding reference are both available, DoTA-Profile also performs BWA-based inversion analysis. INV targets without complete reference coverage are skipped.
+
+Run `dota-profile --help` for database overrides and the Kraken2 thread option.
 
 ## Output
 
-The primary results are `dota_amr_results.jsonl` and `reports/cell_amr_matrix.tsv`. The JSONL contains one structured record per cell; the TSV contains one row per cell and one column per AMR target, together with taxonomic and quality-control information.
+The primary results are `dota_profile_results.jsonl` and `reports/cell_target_matrix.tsv`. Phase-variation calls are written to `reports/cell_phase_variation.tsv`, and optional BLAST matches to `reports/reference_matches.tsv`.
 
 Intermediate files are written to `tmp/`, report tables to `reports/`, and figures to `figures/`.
 
 ## Optional: PrimerPicker
 
-Provide one target sequence per FASTA record and run:
-
 ```bash
-python PrimerPicker/primer_picker.py targets.fa \
-  --outdir primer_picker_results \
-  --seed 123
+python PrimerPicker/primer_picker.py targets.fa --outdir primer_picker_results --seed 123
 ```
 
-The main output is `primer_picker_results/top-primer-sets.tsv`. Run `python PrimerPicker/primer_picker.py --help` for additional options.
+The main output is `primer_picker_results/top-primer-sets.tsv`.
 
 ## Citation
 
-DoTA-AMR was developed for analysis of single-cell targeted sequencing data based on the DoTA-Seq framework. For the underlying DoTA-Seq method, please cite:
+DoTA-Profile was developed for analysis of single-cell targeted sequencing data based on the DoTA-Seq framework. For the underlying DoTA-Seq method, please cite:
 
 Lan F, Saba J, Ross TD, Zhou Z, Krauska K, Anantharaman K, Landick R, Venturelli OS. Massively parallel single-cell sequencing of diverse microbial populations. *Nature Methods* 21, 228–235 (2024). https://doi.org/10.1038/s41592-023-02157-7
 

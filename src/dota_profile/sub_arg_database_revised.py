@@ -1,6 +1,6 @@
 import pandas as pd
 import math
-from helper_functions import open_maybe_gzip, get_arg_names, ensure_output_directories
+from helper_functions import open_maybe_gzip, get_arg_names, get_target_modes, ensure_output_directories
 from filter_sub_args import run_sub_arg_denoising_pipeline
 from collections import Counter, defaultdict
 from typing import List, Dict, Tuple
@@ -22,7 +22,7 @@ def create_sub_arg_barcode_summary(
     filtered_sub_arg_barcode_summary_tsv: str, 
     filtered_stats_cells_per_sub_arg_tsv: str, extra_mle_info_sub_arg_tsv,
     p_match, p_none, p_error, alpha_prior, beta_prior,
-    min_confidence, min_noise_reads, noise_cutoff_ratio,
+    min_confidence, min_noise_reads, noise_cutoff_ratio, include_all_targets=False,
     alpha=0.05, max_shift_sub_arg=2, max_mm_sub_arg=0):
 
     # note that input barcode summary should have already undergone first round of filtering 
@@ -33,7 +33,8 @@ def create_sub_arg_barcode_summary(
     
     # Preliminary steps
     # Read in genes_eligible_for_sub_args
-    genes_eligible_for_sub_args = get_genes_eligible_for_sub_args(primers_file)
+    genes_eligible_for_sub_args = get_genes_eligible_for_sub_args(
+        primers_file, include_all_targets)
     
     # 2026-08-10: Keep the sub-ARG gene vector entirely determined by the primer CSV.
     # Reason: filtering must not inject a control gene that is absent from the selected primer panel.
@@ -425,25 +426,19 @@ def sort_sub_args_by_barcode(
     return sub_arg_seqs_by_barcode
 
 def get_genes_eligible_for_sub_args(
-    primers_file: str) -> List[str]:
+    primers_file: str, include_all_targets: bool = False) -> List[str]:
     """
     Extract information from primers file to form a list of all genes eligible to have sub-ARGs.
     The ARGs in the primers file are classified as either "single" or "family".
     Those classified as "family" are eligible to have sub-ARGs.
     Returns a list of eligible genes.
     """
-    genes_eligible_for_sub_args = []
-    with open(primers_file, 'r') as f:
-        i = 0
-        line = f.readline()
-        while line != "":
-            if i != 0 and i != 1: # skip over header line and 16s primer; only include the ARG primers
-                if line.split(",")[3].strip().lower() == "family":
-                    genes_eligible_for_sub_args.append(line.split(",")[0])
-            line = f.readline()
-            i += 1
-
-    return genes_eligible_for_sub_args
+    # 2026-08-10: Reconstruct sequences for PV targets or every target when a reference is supplied.
+    # Reason: blank targets need only detection unless reference annotation was explicitly requested.
+    target_modes = get_target_modes(primers_file)
+    if include_all_targets:
+        return list(target_modes)
+    return [target for target, mode in target_modes.items() if mode in {"ssr", "inv"}]
 
 def convert_gene_names_to_nums(
     selected_gene_names: List[str], arg_names: List[str]) -> List[int]:
@@ -609,7 +604,7 @@ def main():
     parser.add_argument("--sub_arg_barcode_summary_tsv", type=str, default="tmp/sub_arg_barcode_summary.tsv")
     parser.add_argument("--primers_file", type=str, required=True)
     parser.add_argument("--sub_arg_seqs_list", type=str, default="tmp/sub_arg_seqs_list.txt")
-    parser.add_argument("--filtered_sub_arg_barcode_summary_tsv", type=str, default="reports/cell_amr_matrix.tsv")
+    parser.add_argument("--filtered_sub_arg_barcode_summary_tsv", type=str, default="reports/cell_target_matrix.tsv")
     parser.add_argument("--filtered_stats_cells_per_sub_arg_tsv", type=str, default="tmp/filtered_stats_cells_per_sub_arg.tsv")
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--max_shift_sub_arg", type=int, default=2)
@@ -624,12 +619,15 @@ def main():
     parser.add_argument("--min_confidence", type=float, default=0.95)
     parser.add_argument("--min_noise_reads", type=int, default=2)
     parser.add_argument("--noise_cutoff_ratio", type=float, default=0.05)
+    # 2026-08-10: Permit the CLI to reconstruct every target for optional reference matching.
+    # Reason: reference availability is independent of the per-target PV mode.
+    parser.add_argument("--include_all_targets", action="store_true")
 
 
     args = parser.parse_args()
 
     # 2026-08-10: Materialize temporary and final report directories before writing sub-ARG tables.
-    # Reason: the cell-by-AMR matrix is a report while working tables remain under tmp.
+    # Reason: the cell-by-target matrix is a report while working tables remain under tmp.
     ensure_output_directories(
         args.sub_arg_barcode_summary_tsv, args.sub_arg_seqs_list,
         args.filtered_sub_arg_barcode_summary_tsv,
@@ -667,6 +665,7 @@ def main():
         args.extra_mle_info_sub_arg_tsv,
         args.p_match, args.p_none, args.p_error, args.alpha_prior, args.beta_prior,
         args.min_confidence, args.min_noise_reads, args.noise_cutoff_ratio,
+        args.include_all_targets,
         args.alpha, args.max_shift_sub_arg, args.max_mm_sub_arg)
 
 if __name__ == "__main__":

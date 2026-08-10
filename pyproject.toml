@@ -3,14 +3,14 @@ requires = ["hatchling >= 1.26"]
 build-backend = "hatchling.build"
 
 [project]
-# 2026-08-10: Use the public DoTA-AMR distribution name.
-# Reason: the legacy repository name should not be used as the software name.
-name = "dota-amr"
+# 2026-08-10: Rename the public distribution to DoTA-Profile.
+# Reason: the workflow now supports arbitrary targets and phase variation, not only AMR.
+name = "dota-profile"
 version = "0.1.0"
 authors = [
   { name="Julianna Yuen", email="juliannayuen07@gmail.com" },
 ]
-description = "A software for identifying antibiotic resistance genes in bacteria"
+description = "Single-cell profiling of targeted microbial genes and phase variation"
 readme = "README.md"
 requires-python = ">=3.13.11"
 classifiers = [
@@ -20,10 +20,10 @@ classifiers = [
 license = "MIT"
 license-files = ["LICENSE"]
 
-# 2026-08-10: Install the complete workflow as the public dotaseq-amr command.
-# Reason: users should run paired R1/R2 inputs through one supported entry point.
+# 2026-08-10: Install the complete workflow as the public dota-profile command.
+# Reason: the command name should match the broader software name.
 [project.scripts]
-dotaseq-amr = "dota_amr.cli:main"
+dota-profile = "dota_profile.cli:main"
 
 # 2026-08-10: Keep separately distributed databases out of Python package archives.
 # Reason: the repository retrieves reference databases with Git LFS, so embedding them duplicates large files.
@@ -36,4 +36,4 @@ include = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dota_amr"]
+packages = ["src/dota_profile"]

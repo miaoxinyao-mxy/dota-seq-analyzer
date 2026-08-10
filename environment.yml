@@ -1,6 +1,6 @@
-# 2026-08-10: Added a reproducible Conda environment for DoTA-AMR.
-# Reason: install the Python and command-line dependencies in one environment.
-name: dota-seq-amr
+# 2026-08-10: Rename the reproducible environment for DoTA-Profile.
+# Reason: the environment should match the public software name.
+name: dota-profile
 
 channels:
   - conda-forge
@@ -17,4 +17,7 @@ dependencies:
   - biopython
   - kraken2
   - blast
+  # 2026-08-10: Add BWA for reference-aware inversion analysis.
+  # Reason: it is invoked only when an INV target and reference FASTA are both provided.
+  - bwa
   - primer3

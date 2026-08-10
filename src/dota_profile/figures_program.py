@@ -52,7 +52,8 @@ def make_asv_arg_table(
     Figure: Heat map of ASVs with ARGs
     Purpose: determine which ARGs each "species" has (where each "species" is identified with its ASV)
     """
-    # create ASV-ARG table
+    # 2026-08-10: Present the existing ASV association plot as a generic target plot.
+    # Reason: target panels may contain AMR, marker genes, or phase-variation loci.
     df_asv_arg, final_gene_names = create_asv_arg_matrix(
         use_asvs, final_asv_barcode_summary_tsv,  
         asv_arg_table_tsv, min_cells_per_asv, first_gene_column_num, 
@@ -101,7 +102,7 @@ def make_asv_arg_table(
         axs.text(
             0.5,
             0.5,
-            "No taxonomic groups met the cell and AMR thresholds.",
+            "No taxonomic groups met the cell and target thresholds.",
             ha="center",
             va="center",
         )
@@ -111,12 +112,12 @@ def make_asv_arg_table(
 
     # plot the ASV-ARG table
     axs = plt.matshow(df_asv_arg.to_numpy(), norm=colors.LogNorm(), cmap = "Blues").axes
-    axs.set_xlabel("ARG", fontweight = "bold", fontsize = 11)
+    axs.set_xlabel("Target", fontweight = "bold", fontsize = 11)
     axs.xaxis.tick_bottom()
     axs.set_ylabel(y_axis_label, fontweight = "bold", fontsize = 11)
     axs.set_xticks(np.arange(0, len(final_gene_names), 1), final_gene_names, rotation = "vertical") 
     axs.set_yticks(np.arange(0, len(asv_or_tax_labels), 1), asv_or_tax_labels)
-    axs.set_title("ARGs Present in the Most Common Taxonomic Classifications", fontweight = "bold", fontsize = 15, pad = 30)
+    axs.set_title("Targets Present in the Most Common Taxonomic Classifications", fontweight = "bold", fontsize = 15, pad = 30)
     plt.colorbar()
     plt.savefig(asv_arg_figure, bbox_inches = "tight", pad_inches = 0.3, dpi = figure_dpi)
     plt.show()
@@ -144,9 +145,9 @@ def make_barcode_group_size_figure(
     ax = axs[0]
     jackpottocurve(fig, ax, sum_16s_reads, "Only 16s", vline=5)
     ax = axs[1]
-    jackpottocurve(fig, ax, sum_classified_reads, "Classified (16s + ARG)", vline=0)
+    jackpottocurve(fig, ax, sum_classified_reads, "Classified (16S + targets)", vline=0)
     ax = axs[2]
-    jackpottocurve(fig, ax, sum_all_reads, "All (16s + ARG + unclassified)", vline=0)
+    jackpottocurve(fig, ax, sum_all_reads, "All (16S + targets + unclassified)", vline=0)
 
     plt.savefig(barcode_group_size_figure, bbox_inches = "tight", pad_inches = 0.3, dpi = figure_dpi)
 
@@ -173,7 +174,7 @@ def make_primer_balance_figure(
         ax.hist(arg_ratios[arg], bins = 100, range = (0.1, 1), color = c_palette[i % 13])
         ax.set_yscale("log")
         ax.set_title(arg)
-        ax.set_xticks([0,1], ["16S-only", "ARG-only"])
+        ax.set_xticks([0,1], ["16S-only", "target-only"])
         #ax.set_yticklabels([0])
         i += 1
 
@@ -424,10 +425,10 @@ def main():
     parser.add_argument("--primers_file", type=str, required=True)
     parser.add_argument("--b_with_ids", type=str, required=True)
     # 2026-08-10: Route plotting summaries to tmp and final images to figures.
-    # Reason: the aggregated taxa-by-AMR table is a plotting intermediate, not the cell-level result.
-    parser.add_argument("--asv_arg_table_tsv", type=str, default="tmp/taxa_amr_summary.tsv")
+    # Reason: the aggregated taxa-by-target table is a plotting intermediate, not the cell-level result.
+    parser.add_argument("--asv_arg_table_tsv", type=str, default="tmp/taxa_target_summary.tsv")
     parser.add_argument("--global_asv_tsv", type=str, required=True)
-    parser.add_argument("--asv_arg_figure", type=str, default="figures/asv_arg_table.png")
+    parser.add_argument("--asv_arg_figure", type=str, default="figures/taxa_target_table.png")
     parser.add_argument("--barcode_group_size_figure", type=str, default="figures/barcode_group_size_qc.png")
     parser.add_argument("--primer_balance_figure", type=str, default="figures/primer_balance_qc.png")
     parser.add_argument("--first_gene_column_num", type=int, required=True)

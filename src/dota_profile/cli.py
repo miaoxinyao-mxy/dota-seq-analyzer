@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Run the complete DoTA-AMR workflow from one public command."""
+"""Run the complete DoTA-Profile workflow from one public command."""
 
-# 2026-08-10: Add a single supported entry point for the complete DoTA-AMR workflow.
+# 2026-08-10: Add a single supported entry point for the complete DoTA-Profile workflow.
 # Reason: users should run R1/R2 data with one command instead of invoking internal modules manually.
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+from .helper_functions import get_target_modes
+
 
 def _run_step(name: str, command: list[str], output_dir: Path) -> None:
     """Run one pipeline stage and stop immediately if it fails."""
-    print(f"\n[DoTA-AMR] {name}", flush=True)
+    print(f"\n[DoTA-Profile] {name}", flush=True)
     subprocess.run(command, cwd=output_dir, check=True)
 
 
@@ -28,8 +31,8 @@ def _find_project_database(relative_path: str) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="dotaseq-amr",
-        description="Map AMR targets to cells in paired R1/R2 DoTA-Seq data.",
+        prog="dota-profile",
+        description="Profile targeted genes and phase variation in single-cell DoTA-Seq data.",
     )
     parser.add_argument("-1", "--r1", required=True, help="R1 FASTQ file")
     parser.add_argument("-2", "--r2", required=True, help="R2 FASTQ file")
@@ -37,9 +40,9 @@ def main() -> None:
     parser.add_argument("-o", "--output", required=True, help="Output directory")
     parser.add_argument("--threads", type=int, default=4, help="Kraken2 threads (default: 4)")
     parser.add_argument("--taxonomy-db", help="Extracted Kraken2 taxonomy database directory")
-    # 2026-08-10: Allow a custom reference while retaining the project reference as the default.
-    # Reason: users should not need to supply a FASTA for the standard analysis.
-    parser.add_argument("-r", "--reference", help="Custom AMR reference FASTA (default: project database)")
+    # 2026-08-10: Run reference annotation only when a FASTA is explicitly supplied.
+    # Reason: DoTA-Profile supports arbitrary targets that do not belong in the bundled AMR database.
+    parser.add_argument("-r", "--reference", help="Optional reference FASTA for BLAST annotation")
     args = parser.parse_args()
 
     r1 = Path(args.r1).expanduser().resolve()
@@ -59,21 +62,17 @@ def main() -> None:
         if args.taxonomy_db
         else _find_project_database("database/mnt/workspace2/jamie/ref/k2__gg2")
     )
-    reference = (
-        Path(args.reference).expanduser().resolve()
-        if args.reference
-        else _find_project_database("database/arg_db/all_clean.fasta")
-    )
+    reference = Path(args.reference).expanduser().resolve() if args.reference else None
     if not taxonomy_db.is_dir():
         parser.error(
-            "taxonomy database not found; extract database/dota-amr-taxonomy-db.tar.gz "
+            "taxonomy database not found; extract database/dota-profile-taxonomy-db.tar.gz "
             "or provide --taxonomy-db"
         )
-    if not reference.is_file():
-        parser.error(
-            "AMR reference FASTA not found; extract database/dota-amr-arg-db.tar.gz "
-            "or provide -r/--reference"
-        )
+    if reference is not None and not reference.is_file():
+        parser.error(f"reference FASTA not found: {reference}")
+
+    target_modes = get_target_modes(str(primers))
+    pv_requested = any(mode in {"ssr", "inv"} for mode in target_modes.values())
 
     for directory in (
         output_dir,
@@ -205,7 +204,7 @@ def main() -> None:
         output_dir,
     )
     _run_step(
-        "Filter AMR background",
+        "Filter target background",
         [
             python,
             script("filter_args.py"),
@@ -216,11 +215,10 @@ def main() -> None:
         ],
         output_dir,
     )
-    # 2026-08-10: Always annotate against either the bundled or user-supplied reference.
-    # Reason: supplying -r changes the reference source, not the analysis stages.
-    _run_step(
-        "Resolve AMR subtypes",
-        [
+    # 2026-08-10: Reconstruct sequences only for requested PV or reference analyses.
+    # Reason: blank Mode targets require only cell-level detection.
+    if pv_requested or reference is not None:
+        sequence_command = [
             python,
             script("sub_arg_database_revised.py"),
             "--filtered_counts_summary_arg_tsv",
@@ -235,25 +233,58 @@ def main() -> None:
             str(r2),
             "--primers_file",
             str(primers),
-        ],
-        output_dir,
-    )
-    _run_step(
-        "Annotate AMR subtypes",
-        [
+            "--filtered_sub_arg_barcode_summary_tsv",
+            "reports/cell_target_matrix.tsv",
+        ]
+        if reference is not None:
+            sequence_command.append("--include_all_targets")
+        _run_step("Reconstruct target sequences", sequence_command, output_dir)
+    else:
+        shutil.copyfile(
+            output_dir / "tmp/filtered_counts_summary_arg.tsv",
+            output_dir / "reports/cell_target_matrix.tsv",
+        )
+
+    if pv_requested:
+        pv_command = [
             python,
-            script("blastn_sub_arg.py"),
-            "--sub_arg_seqs_list",
+            script("phase_variation.py"),
+            "--sequence_list",
             "tmp/sub_arg_seqs_list.txt",
-            "--input_fasta",
-            str(reference),
-            "--final_barcode_summary_tsv",
-            "reports/cell_amr_matrix.tsv",
-            "--first_gene_column_num",
-            "14",
-        ],
-        output_dir,
-    )
+            "--cell_matrix",
+            "reports/cell_target_matrix.tsv",
+            "--primers_file",
+            str(primers),
+        ]
+        if reference is not None and any(mode == "inv" for mode in target_modes.values()):
+            pv_command.extend(["--reference", str(reference)])
+        _run_step(
+            "Analyze phase variation",
+            pv_command,
+            output_dir,
+        )
+
+    if reference is not None:
+        _run_step(
+            "Match reconstructed sequences to reference",
+            [
+                python,
+                script("blastn_sub_arg.py"),
+                "--sub_arg_seqs_list",
+                "tmp/sub_arg_seqs_list.txt",
+                "--input_fasta",
+                str(reference),
+                "--blastn_sub_arg_tsv",
+                "reports/reference_matches.tsv",
+                "--db",
+                "tmp/blast_db/dota_profile",
+                "--final_barcode_summary_tsv",
+                "reports/cell_target_matrix.tsv",
+                "--first_gene_column_num",
+                "14",
+            ],
+            output_dir,
+        )
     _run_step(
         "Generate figures",
         [
@@ -264,7 +295,7 @@ def main() -> None:
             "--unfiltered_barcode_summary_tsv",
             "tmp/unfiltered_barcode_summary.tsv",
             "--final_asv_barcode_summary_tsv",
-            "reports/cell_amr_matrix.tsv",
+            "reports/cell_target_matrix.tsv",
             "--asv_barcode_summary_no_sub_args_tsv",
             "tmp/asv_barcode_summary.tsv",
             "--primers_file",
@@ -278,22 +309,23 @@ def main() -> None:
         ],
         output_dir,
     )
-    _run_step(
-        "Export JSONL",
-        [
-            python,
-            script("export_results.py"),
-            "--input_tsv",
-            "reports/cell_amr_matrix.tsv",
-            "--primers_file",
-            str(primers),
-            "--output_jsonl",
-            "dota_amr_results.jsonl",
-        ],
-        output_dir,
-    )
+    export_command = [
+        python,
+        script("export_results.py"),
+        "--input_tsv",
+        "reports/cell_target_matrix.tsv",
+        "--primers_file",
+        str(primers),
+        "--output_jsonl",
+        "dota_profile_results.jsonl",
+    ]
+    if pv_requested:
+        export_command.extend([
+            "--phase_variation_tsv", "reports/cell_phase_variation.tsv"
+        ])
+    _run_step("Export JSONL", export_command, output_dir)
 
-    print(f"\nDoTA-AMR complete: {output_dir}", flush=True)
+    print(f"\nDoTA-Profile complete: {output_dir}", flush=True)
 
 
 if __name__ == "__main__":

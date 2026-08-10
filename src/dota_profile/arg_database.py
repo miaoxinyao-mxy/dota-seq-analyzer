@@ -523,7 +523,9 @@ def main():
     parser.add_argument("--primers_file", type=str, required=True)
     parser.add_argument("--sub_arg_seqs_list", type=str, default="tmp/sub_arg_seqs_list.txt")
     parser.add_argument("--stats_cells_per_sub_arg_tsv", type=str, default="tmp/stats_cells_per_sub_arg.tsv")
-    parser.add_argument("--filtered_sub_arg_barcode_summary_tsv", type=str, default="reports/cell_amr_matrix.tsv")
+    # 2026-08-10: Use the generic cell-by-target report name.
+    # Reason: the public workflow is no longer limited to AMR panels.
+    parser.add_argument("--filtered_sub_arg_barcode_summary_tsv", type=str, default="reports/cell_target_matrix.tsv")
     parser.add_argument("--baseline_gene", type=str, required=True)
     parser.add_argument("--filtered_stats_cells_per_sub_arg_tsv", type=str, default="tmp/filtered_stats_cells_per_sub_arg.tsv")
     parser.add_argument("--alpha", type=float, default=0.05)

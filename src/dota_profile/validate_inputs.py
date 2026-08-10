@@ -1,3 +1,4 @@
+import csv
 import os
 import sys
 import argparse
@@ -90,13 +91,13 @@ def check_primers(primers_file: str):
     Check validity of input primer CSV file.
     Specifically, check the following criteria:
     - CSV format
-    - 4 columns
+    - 4 columns: Primer/Target, F, R, and Mode
     - 2nd & 3rd columns have headers "F" and "R", corresponding to forward & reverse primer sequences
     - No duplicate primer names
     - No duplicate paired primer sequences
     - Primer sequences only contain A,T,C,G
     - First primer is 16s, to optimize program run-time
-    - Sub-ARG classification is either "single" or "family"
+    - Mode is blank, "ssr", or "inv"; legacy single/family files remain accepted
     Returns either a string describing the first observed error (meaning it failed at least 1 test);
     or returns "Valid" if passed all tests. 
     """
@@ -104,46 +105,51 @@ def check_primers(primers_file: str):
     all_primer_names = []
     all_primer_seqs = []
 
-    with open(primers_file, 'r') as f:
-        i = 0
-        line = f.readline()
-        while line != "":
-            line = line.split(",")
+    # 2026-08-10: Validate the new optional Mode column with CSV-aware parsing.
+    # Reason: blank Mode values are valid and quoted target names must not break column parsing.
+    with open(primers_file, 'r', encoding='utf-8-sig', newline='') as f:
+        reader = csv.reader(f)
+        rows = list(reader)
+        if not rows or len(rows[0]) != 4:
+            return "<Primer File> CSV error: expected 4 columns"
+
+        header = rows[0]
+        is_new_schema = header[0] in ["Primer", "Target"] and header[3] == "Mode"
+        is_legacy_schema = header[0] == "Primer" and header[3] == "Sub-ARG"
+        if not (is_new_schema or is_legacy_schema):
+            return "<Primer File> Header error: expected Primer/Target,F,R,Mode"
+        if not (header[1] == "F" and header[2] == "R"):
+            return "<Primer File> Header name error: 2nd column should be labeled 'F', and 3rd column labeled 'R'"
+
+        for i, line in enumerate(rows[1:], start=1):
             if len(line) != 4:
-                return "<Primer File> CSV error: either not in CSV format, or does not have 4 columns"
-            
-            if i == 0: # header line
-                if not(line[1] == "F" and line[2] == "R"):
-                    return "<Primer File> Header name error: 2nd column should be labeled 'F', and 3rd column labeled 'R'"
-            
-            elif i >= 1: # any primer line, including first primer
+                return f"<Primer File> CSV error: row {i + 1} does not have 4 columns"
 
-                primer = line[0]
-                seq = (line[1], line[2])
-                if primer in all_primer_names:
-                    return f"<Primer File> Duplicate primer name error: {primer} appears multiple times in primer CSV"
-                elif seq in all_primer_seqs:
-                    return f"<Primer File> Duplicate primer sequence error: fwd & rev sequence pair\n{seq}\nappears multiple times in primer CSV"
-                else:
-                    all_primer_names.append(primer)
-                    all_primer_seqs.append(seq)
+            primer = line[0].strip()
+            seq = (line[1].strip(), line[2].strip())
+            if primer in all_primer_names:
+                return f"<Primer File> Duplicate primer name error: {primer} appears multiple times in primer CSV"
+            elif seq in all_primer_seqs:
+                return f"<Primer File> Duplicate primer sequence error: F & R sequence pair\n{seq}\nappears multiple times in primer CSV"
+            else:
+                all_primer_names.append(primer)
+                all_primer_seqs.append(seq)
 
-                for char in line[1]:
-                    if char not in "ATCG":
-                        return f"<Primer File> Sequence error: Forward primer {line[1]} contains letters other than A,T,C,G"
-                for char in line[2]:
-                    if char not in "ATCG":
-                        return f"<Primer File> Sequence error: Reverse primer {line[2]} contains letters other than A,T,C,G"
-                    
-                if line[3].strip().lower() not in ["single", "family"]:
-                    return f"<Primer File> Sub-ARG classification error: sub-ARG status for {primer} should be either 'single' or 'family"
+            for char in seq[0]:
+                if char not in "ATCG":
+                    return f"<Primer File> Sequence error: F primer {seq[0]} contains letters other than A,T,C,G"
+            for char in seq[1]:
+                if char not in "ATCG":
+                    return f"<Primer File> Sequence error: R primer {seq[1]} contains letters other than A,T,C,G"
 
-            if i == 1: # first primer line
-                if not line[0] == "16s":
-                    return "<Primer File> Primer order error: First primer should be 16s, to optimize program run time"
-            
-            line = f.readline()
-            i += 1
+            mode = line[3].strip().casefold()
+            if is_new_schema and mode not in ["", "ssr", "inv"]:
+                return f"<Primer File> Mode error: {primer} should use blank, 'ssr', or 'inv'"
+            if is_legacy_schema and mode not in ["single", "family"]:
+                return f"<Primer File> Legacy Sub-ARG error: {primer} should use 'single' or 'family'"
+
+            if i == 1 and primer.casefold() != "16s":
+                return "<Primer File> Primer order error: First primer should be 16s, to optimize program run time"
         
     return "Valid" # input primer file is valid if it has met all the above conditions    
 

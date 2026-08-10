@@ -179,10 +179,10 @@ def main():
     parser.add_argument("--sub_arg_seqs_list", type=str, required=True)
     # 2026-08-10: Separate the BLAST report from its query and database intermediates.
     # Reason: users should see reports while generated BLAST files remain under tmp.
-    parser.add_argument("--blastn_sub_arg_tsv", type=str, default="reports/blastn_sub_arg.tsv")
+    parser.add_argument("--blastn_sub_arg_tsv", type=str, default="reports/reference_matches.tsv")
     parser.add_argument("--query_fasta", type=str, default="tmp/query_reads.fa")
     parser.add_argument("--input_fasta", type=str, required=True)
-    parser.add_argument("--db", type=str, default="tmp/blast_db/dota_amr_arg")
+    parser.add_argument("--db", type=str, default="tmp/blast_db/dota_profile")
     parser.add_argument("--final_barcode_summary_tsv", type=str, required=True)
     parser.add_argument("--first_gene_column_num", type=int, required=True)
     

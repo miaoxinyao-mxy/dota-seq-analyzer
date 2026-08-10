@@ -1,4 +1,4 @@
-"""Export the final DoTA-AMR cell-level result as JSON Lines."""
+"""Export the final DoTA-Profile cell-level result as JSON Lines."""
 
 import argparse
 import json
@@ -48,38 +48,51 @@ def _parse_taxonomy(lineage):
 
 
 def _is_detected(value):
-    """Return whether an AMR assignment represents a detected target."""
+    """Return whether an assignment represents a detected target."""
     if pd.isna(value):
         return False
     return str(value).strip() not in {"", "0", "0.0", "None", "nan"}
 
 
-def export_results(input_tsv, primers_file, output_jsonl):
-    """Write one complete single-cell DoTA-AMR result per JSONL line."""
+def export_results(input_tsv, primers_file, output_jsonl, phase_variation_tsv=None):
+    """Write one complete single-cell DoTA-Profile result per JSONL line."""
     dataframe = pd.read_csv(input_tsv, sep="\t", index_col="Barcode")
     gene_names = get_arg_names(primers_file)
     missing_genes = [gene for gene in gene_names if gene not in dataframe.columns]
     if missing_genes:
         raise ValueError(
-            "Final result table is missing primer-defined AMR columns: "
+            "Final result table is missing primer-defined target columns: "
             + ", ".join(missing_genes)
         )
+
+    # 2026-08-10: Attach optional PV calls to the existing cell-level JSON export.
+    # Reason: one JSONL record should contain detection, taxonomy, and phase-variation results.
+    pv_by_barcode = {}
+    if phase_variation_tsv:
+        pv_table = pd.read_csv(phase_variation_tsv, sep="\t")
+        for row in pv_table.to_dict(orient="records"):
+            barcode = str(row.pop("Barcode"))
+            pv_by_barcode.setdefault(barcode, []).append({
+                str(key).lower(): _native_value(value) for key, value in row.items()
+            })
 
     output_path = Path(output_jsonl)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 2026-08-10: Emit one nested record per cell and omit absent AMR targets.
+    # 2026-08-10: Emit one nested record per cell and omit absent targets.
     # Reason: JSONL is the primary machine-readable product and remains streamable for large experiments.
     with output_path.open("w", encoding="utf-8") as output_handle:
         for barcode, row in dataframe.iterrows():
-            amr_assignments = [
-                {"gene": gene, "assignment": _native_value(row[gene])}
-                for gene in gene_names
-                if _is_detected(row[gene])
+            target_assignments = [
+                {"target": target, "assignment": _native_value(row[target])}
+                for target in gene_names
+                if _is_detected(row[target])
             ]
             lineage = _native_value(row.get("Predicted taxonomy"))
             record = {
-                "schema_version": "1.0",
+                # 2026-08-10: Advance the schema for generic targets and PV calls.
+                # Reason: version 1.0 exposed an AMR-only field and cannot represent phase variation.
+                "schema_version": "2.0",
                 "cell_barcode": str(barcode),
                 "taxonomy": {
                     "lineage": lineage,
@@ -98,7 +111,8 @@ def export_results(input_tsv, primers_file, output_jsonl):
                     "technical_noise_reads": _native_value(row.get("Technical noise count")),
                     "reads_used_for_asv": _native_value(row.get("Reads_used_for_ASV")),
                 },
-                "amr": amr_assignments,
+                "targets": target_assignments,
+                "phase_variation": pv_by_barcode.get(str(barcode), []),
             }
             output_handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -107,18 +121,20 @@ def export_results(input_tsv, primers_file, output_jsonl):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Export the final DoTA-AMR single-cell result as JSONL."
+        description="Export the final DoTA-Profile single-cell result as JSONL."
     )
     parser.add_argument("--input_tsv", required=True)
     parser.add_argument("--primers_file", required=True)
-    parser.add_argument("--output_jsonl", default="dota_amr_results.jsonl")
+    parser.add_argument("--output_jsonl", default="dota_profile_results.jsonl")
+    parser.add_argument("--phase_variation_tsv")
     args = parser.parse_args()
 
     for input_path in (args.input_tsv, args.primers_file):
         if not os.path.exists(input_path):
             parser.error(f"input file not found: {input_path}")
 
-    cell_count = export_results(args.input_tsv, args.primers_file, args.output_jsonl)
+    cell_count = export_results(
+        args.input_tsv, args.primers_file, args.output_jsonl, args.phase_variation_tsv)
     print(f"Wrote {cell_count} single-cell records to {args.output_jsonl}")
 
 
