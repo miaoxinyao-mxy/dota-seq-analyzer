@@ -1,82 +1,21 @@
-# DoTA-Seq tools: ARGMapper and PrimerPicker
+# ARGMapper: AMR mapping for DoTA-Seq
 
-This repository contains two companion tools for the DoTA-Seq workflow:
+This repository contains ARGMapper, a DoTA-Seq workflow for mapping antibiotic-resistance genes (ARGs) to bacterial taxonomic classifications and visualizing AMR patterns.
 
-- **ARGMapper** processes paired-end DoTA-Seq reads and links antibiotic-resistance-gene (ARG) signal to bacterial taxonomic classifications.
-- **PrimerPicker** designs multiplex PCR primer pools from a FASTA file, scores primer dimerization, and ranks pools with simulated annealing.
-
-The tools are useful together: PrimerPicker can produce candidate pools for a DoTA-Seq experiment, and ARGMapper can analyze the resulting sequencing data at one or more time points to investigate ARG carriage and horizontal gene transfer.
+PrimerPicker is included as an optional utility for designing multiplex PCR primer pools. It is not required for running ARGMapper.
 
 ## Repository layout
 
 ```text
 src/argmapper/       ARGMapper pipeline modules and driver configuration
-PrimerPicker/        PrimerPicker CLI and original workflow notebooks
+PrimerPicker/        Optional primer-design utility and original notebooks
 pyproject.toml        Python package metadata
 LICENSE               MIT license
 ```
 
-## PrimerPicker
-
-### Requirements
-
-PrimerPicker requires Python 3.10 or newer and the `primer3_core` and `ntthal` executables. The simplest installation is through Conda:
-
-```bash
-conda create -n primer-picker -c bioconda -c conda-forge primer3 python=3.10
-conda activate primer-picker
-```
-
-No Biopython, NumPy, joblib, or matplotlib installation is required by the CLI.
-
-### Input
-
-Provide one target per FASTA record. The record name becomes the target name:
-
-```text
->gene1
-ATGCGTACGTAGCTAGCTAG...
->gene2
-ATGAAACCCGGGTTTAAA...
-```
-
-### Run
-
-From the repository root:
-
-```bash
-python PrimerPicker/primer_picker.py targets.fa \
-  --outdir primer_picker_results \
-  --seed 123
-```
-
-The default run generates up to 100 candidate pairs per target, scores dimers with `ntthal`, and performs 200 simulated-annealing runs. For a quick test:
-
-```bash
-python PrimerPicker/primer_picker.py targets.fa \
-  --num-primers 10 \
-  --anneal-iterations 5 \
-  --anneal-minutes 0.01 \
-  --dimer-jobs 1 \
-  --anneal-jobs 1
-```
-
-Useful options include `--product-size-range 400-500`, repeated `--exclude TEXT`, `--no-adapters`, `--no-16s`, and explicit executable paths with `--primer3-core PATH` and `--ntthal PATH`. Run `python PrimerPicker/primer_picker.py --help` for the complete list.
-
-### Results
-
-The output directory contains:
-
-- `top-primer-sets.tsv`: ranked primer pools for experimental review
-- `primers.tsv` and `primers.fasta`: all generated candidates
-- `dimerization-deltaGs.tsv`: calculated dimer scores
-- pickle files used to resume or inspect intermediate results
-
-The notebooks in `PrimerPicker/` preserve the original Primer3, dimer-scoring, and simulated-annealing workflow. They are optional; the CLI is the recommended entry point.
-
 ## ARGMapper
 
-ARGMapper is intended for paired-end, short-read bacterial samples generated as part of the DoTA-Seq workflow. It uses 16S taxonomic classification, barcode-level processing, ASV information, ARG filtering, optional sub-ARG analysis, and statistical classification to produce per-cell summaries and ASV–ARG visualizations.
+ARGMapper is intended for paired-end, short-read bacterial samples generated as part of the DoTA-Seq workflow. It uses 16S taxonomic classification, barcode-level processing, ASV information, ARG filtering, optional sub-ARG analysis, and statistical classification to produce per-cell summaries and AMR/ASV–ARG maps.
 
 ### Installation
 
@@ -86,7 +25,7 @@ Create a Python environment with Python 3.13 or newer and install the package fr
 python -m pip install .
 ```
 
-The full pipeline also depends on external DoTA-Seq tools and databases, including Kraken2 and (when sub-ARG analysis is enabled) BLAST. Configure their paths and analysis parameters in `src/argmapper/driver.sh` before running the workflow.
+The full pipeline also depends on external DoTA-Seq tools and databases, including Kraken2 and, when sub-ARG analysis is enabled, BLAST. Configure their paths and analysis parameters in `src/argmapper/driver.sh` before running the workflow.
 
 ### Required inputs
 
@@ -106,11 +45,49 @@ bash src/argmapper/driver.sh
 
 ### Main outputs
 
-Depending on enabled stages, ARGMapper writes barcode-level TSV summaries, ASV and sub-ARG summaries, filtered count tables, and an ASV–ARG heat map. The driver prints the output paths when processing finishes.
+Depending on enabled stages, ARGMapper writes barcode-level TSV summaries, ASV and sub-ARG summaries, filtered count tables, and an AMR/ASV–ARG heat map. The driver prints the output paths when processing finishes.
+
+## Optional: PrimerPicker
+
+PrimerPicker designs multiplex PCR primer pools from a FASTA file, scores primer dimerization, and ranks pools with simulated annealing. It is not needed if primer sequences are already available.
+
+### Requirements
+
+PrimerPicker requires Python 3.10 or newer and the `primer3_core` and `ntthal` executables:
+
+```bash
+conda create -n primer-picker -c bioconda -c conda-forge primer3 python=3.10
+conda activate primer-picker
+```
+
+No Biopython, NumPy, joblib, or matplotlib installation is required by the CLI.
+
+### Input and usage
+
+Provide one target per FASTA record:
+
+```text
+>gene1
+ATGCGTACGTAGCTAGCTAG...
+>gene2
+ATGAAACCCGGGTTTAAA...
+```
+
+From the repository root:
+
+```bash
+python PrimerPicker/primer_picker.py targets.fa \
+  --outdir primer_picker_results \
+  --seed 123
+```
+
+The default run generates up to 100 candidate pairs per target, scores dimers with `ntthal`, and performs 200 simulated-annealing runs. Run `python PrimerPicker/primer_picker.py --help` for all options.
+
+The main output is `primer_picker_results/top-primer-sets.tsv`. The directory also contains candidate primers, FASTA sequences, dimer scores, and intermediate pickle files. The notebooks in `PrimerPicker/` preserve the original three-stage workflow; the CLI is the recommended entry point.
 
 ## Reproducibility and review
 
-Primer selection is computational support for experimental design; inspect the ranked pools and validate them experimentally before synthesis. For reproducible PrimerPicker runs, record the input FASTA, executable versions, command-line options, and random seed.
+For reproducible analyses, record input files, software versions, command-line options, and random seeds. Primer candidates should be reviewed and experimentally validated before synthesis.
 
 ## Citation
 
