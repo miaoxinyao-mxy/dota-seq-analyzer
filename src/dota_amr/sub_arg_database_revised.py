@@ -606,8 +606,10 @@ def main():
     parser.add_argument("--filtered_counts_summary_arg_tsv", type=str, default="filtered_counts_summary_arg.tsv")
     parser.add_argument("--b_with_ids", type=str, required=True)
     parser.add_argument("--arg_packets", type=str, required=True)
-    parser.add_argument("--fwd_fastq", type=str, required=True)
-    parser.add_argument("--rev_fastq", type=str, required=True)
+    # 2026-08-10: Expose sub-ARG inputs as R1/R2 in the public CLI.
+    # Reason: sequencing inputs are named R1 and R2, not forward/reverse.
+    parser.add_argument("--r1_fastq", type=str, required=True)
+    parser.add_argument("--r2_fastq", type=str, required=True)
     parser.add_argument("--sub_arg_barcode_summary_tsv", type=str, default="sub_arg_barcode_summary.tsv")
     parser.add_argument("--primers_file", type=str, required=True)
     parser.add_argument("--sub_arg_seqs_list", type=str, default="sub_arg_seqs_list.txt")
@@ -635,11 +637,11 @@ def main():
     if not os.path.exists(args.filtered_counts_summary_arg_tsv):
         print(f"❌ Error: input file not found: {args.filtered_counts_summary_arg_tsv}")
         return
-    if not os.path.exists(args.fwd_fastq):
-        print(f"❌ Error: input file not found: {args.fwd_fastq}")
+    if not os.path.exists(args.r1_fastq):
+        print(f"❌ Error: input file not found: {args.r1_fastq}")
         return
-    if not os.path.exists(args.rev_fastq):
-        print(f"❌ Error: input file not found: {args.rev_fastq}")
+    if not os.path.exists(args.r2_fastq):
+        print(f"❌ Error: input file not found: {args.r2_fastq}")
         return
     if not os.path.exists(args.primers_file):
         print(f"❌ Error: input file not found: {args.primers_file}")
@@ -655,7 +657,7 @@ def main():
     create_sub_arg_barcode_summary(
         args.filtered_counts_summary_arg_tsv, 
         args.b_with_ids, args.arg_packets, 
-        args.fwd_fastq, args.rev_fastq,
+        args.r1_fastq, args.r2_fastq,
         args.sub_arg_barcode_summary_tsv, args.primers_file, 
         args.sub_arg_seqs_list, 
         args.filtered_sub_arg_barcode_summary_tsv, 

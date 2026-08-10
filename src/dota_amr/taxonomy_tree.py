@@ -71,9 +71,12 @@ def create_taxonomy_tree(report_filename: str):
             prev_node = root_node
             continue
 
-        # move node to correct parent
-        while tax_lvl_num != prev_node.tax_lvl_num + 1:
+        # 2026-08-10: Attach a taxon to the nearest shallower rank, allowing skipped ranks.
+        # Reason: Kraken2 reports can omit ranks, so requiring consecutive levels can dereference None.
+        while prev_node is not None and prev_node.tax_lvl_num >= tax_lvl_num:
             prev_node = prev_node.parent
+        if prev_node is None:
+            raise ValueError("Kraken report has no valid parent")
 
         # create new node, and connect the parent & child node
         current_node = Node(tax_name, tax_lvl_num, tax_lvl_char, prev_node, tax_id)

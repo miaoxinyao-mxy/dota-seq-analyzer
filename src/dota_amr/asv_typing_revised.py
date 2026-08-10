@@ -320,12 +320,16 @@ def filter_ASV(df_combined, filter_corrupted: bool = False):
         extra_info = " or corrupted single ASV"
     print("Filter out barcodes identified as having a mixed ASV" + extra_info +  "...")
 
-    for barcode in df_combined.index:
-        if (df_combined.loc[barcode, "Status"] == "mixed_ASV") or (df_combined.loc[barcode, "Status"] == "low_depth"):
-            df_combined.drop(index=barcode, inplace=True)
-        if filter_corrupted and df_combined.loc[barcode, "Status"] == "corrupted_single_ASV":
-            df_combined.drop(index=barcode, inplace=True)
-        
+    # 2026-08-10: Build one removal mask before changing the DataFrame.
+    # Reason: deleting a row during iteration can make the next .loc lookup fail.
+    statuses_to_remove = {"mixed_ASV", "low_depth"}
+    if filter_corrupted:
+        statuses_to_remove.add("corrupted_single_ASV")
+    df_combined.drop(
+        index=df_combined.index[df_combined["Status"].isin(statuses_to_remove)],
+        inplace=True,
+    )
+
     print("Pre-filtering # of barcodes:", original_num_barcodes)
     print("  # of barcodes filtered out:", original_num_barcodes-len(df_combined))
     print("  # of barcodes remaining:", len(df_combined))
@@ -369,17 +373,32 @@ def write_ASV_barcode_summary(filtered_barcode_summary_tsv_filename: str, \
     df_combined.to_csv(asv_barcode_summary_tsv_filename, sep = "\t", index_label = "Barcode")
 
 
+# 2026-08-10: Parse command-line booleans from explicit true/false strings.
+# Reason: bool("False") is True in Python and silently enables the wrong ASV filter.
+def parse_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"true", "1", "yes", "y"}:
+        return True
+    if normalized in {"false", "0", "no", "n"}:
+        return False
+    raise argparse.ArgumentTypeError("expected true/false")
+
+
 def main():
     parser = argparse.ArgumentParser()
 
     # take input parameters
     parser.add_argument("--barcode_summary_tsv", type=str, required=True)
     parser.add_argument("--b_with_ids", type=str, required=True)
-    parser.add_argument("--fwd_16s_fastq", type=str, required=True)
-    parser.add_argument("--rev_16s_fastq", type=str, required=True)
+    # 2026-08-10: Expose ASV paired reads as R1/R2 in the public CLI.
+    # Reason: sequencing inputs are named R1 and R2, not forward/reverse.
+    parser.add_argument("--r1_16s_fastq", type=str, required=True)
+    parser.add_argument("--r2_16s_fastq", type=str, required=True)
     parser.add_argument("--asv_barcode_summary_tsv", type=str, default = "asv_barcode_summary.tsv")
     parser.add_argument("--global_asv_tsv", type=str, default = "global_asv.tsv")
-    parser.add_argument("--filter_corrupted", type=bool, default=False)
+    # 2026-08-10: Use parse_bool for predictable CLI behavior.
+    # Reason: argparse type=bool treats every non-empty string as True.
+    parser.add_argument("--filter_corrupted", type=parse_bool, default=False)
     parser.add_argument("--primers_file", type=str, required=True)
 
     args = parser.parse_args()
@@ -391,11 +410,11 @@ def main():
     if not os.path.exists(args.b_with_ids):
         print(f"❌ Error: input file not found: {args.b_with_ids}")
         return
-    if not os.path.exists(args.fwd_16s_fastq):
-        print(f"❌ Error: input file not found: {args.fwd_16s_fastq}")
+    if not os.path.exists(args.r1_16s_fastq):
+        print(f"❌ Error: input file not found: {args.r1_16s_fastq}")
         return
-    if not os.path.exists(args.rev_16s_fastq):
-        print(f"❌ Error: input file not found: {args.rev_16s_fastq}")
+    if not os.path.exists(args.r2_16s_fastq):
+        print(f"❌ Error: input file not found: {args.r2_16s_fastq}")
         return
     if not os.path.exists(args.primers_file):
         print(f"❌ Error: input file not found: {args.primers_file}")
@@ -403,7 +422,7 @@ def main():
 
     conduct_asv_typing(
         args.barcode_summary_tsv, args.b_with_ids,
-        args.fwd_16s_fastq, args.rev_16s_fastq,
+        args.r1_16s_fastq, args.r2_16s_fastq,
         args.asv_barcode_summary_tsv, args.global_asv_tsv, 
         args.primers_file, args.filter_corrupted
     )

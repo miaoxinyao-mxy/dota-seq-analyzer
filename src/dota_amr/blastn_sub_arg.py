@@ -61,7 +61,15 @@ def get_final_gene_names(final_barcode_summary_tsv, first_gene_column_num):
 
     df_summary = pd.read_csv(final_barcode_summary_tsv, sep="\t", index_col = "Barcode")
     all_col_names = df_summary.columns.to_list()
-    final_gene_names = all_col_names[first_gene_column_num:] 
+    gene_columns = all_col_names[first_gene_column_num:]
+
+    # 2026-08-10: Read retained assignments from cell values rather than family column names.
+    # Reason: sub-ARGs such as CTX-M_<A> are values in the CTX-M column, so column matching silently skipped BLAST.
+    final_gene_names = set()
+    for gene in gene_columns:
+        for assignment in df_summary[gene].dropna().astype(str):
+            if assignment not in {"", "0", "0.0", "None", "nan"}:
+                final_gene_names.add(assignment)
     return final_gene_names
 
 def make_blast_db(input_fasta, db):
@@ -103,8 +111,6 @@ def get_blastn_rows(sub_arg_name, read1_seq, read2_seq, query_fasta, db):
 
     # 3. Read BLAST hits and keep the best hit
     hits_by_subject = {}
-    query_order = []
-
     for line in blast_output.splitlines():
         values = line.split("	")
         hit = dict(zip(blast_columns, values))
@@ -112,21 +118,15 @@ def get_blastn_rows(sub_arg_name, read1_seq, read2_seq, query_fasta, db):
         query_name = hit["qseqid"]
         subject_name = hit["sseqid"]
 
-        if query_name not in query_order:
-            query_order.append(query_name)
-
         hits_by_subject.setdefault(subject_name, {})
         hits_by_subject[subject_name].setdefault(query_name, hit)
 
     # 4. Full length and 100%.
     rows = []
 
-    # 2026-08-10: Return no hits when BLAST finds fewer than two query reads.
-    # Reason: a paired match requires both R1 and R2; the old slice could raise IndexError.
-    if len(query_order) < 2:
-        return rows
-
-    read1_name, read2_name = query_order[:2]
+    # 2026-08-10: Identify paired queries by their explicit FASTA IDs.
+    # Reason: BLAST output order is not a stable definition of R1 versus R2.
+    read1_name, read2_name = "read1", "read2"
 
     for subject_hits in hits_by_subject.values():
         if read1_name not in subject_hits or read2_name not in subject_hits:

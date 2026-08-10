@@ -38,6 +38,15 @@ def determine_16s_taxonomy(t_line: str, tax_nodes_lists):
     t_line_parsed = t_line.strip().split("\t")        
     tax_lvl_and_name = t_line_parsed[2].split(" (taxid")[0]
 
+    # 2026-08-10: Handle Kraken2 taxids for unclassified and root records before lookup.
+    # Reason: standard Kraken2 writes taxid 0/1 instead of the custom names used downstream.
+    if tax_lvl_and_name in {"0", "unclassified"}:
+        taxonomy["classifiable"] = False
+        return taxonomy
+    if tax_lvl_and_name in {"1", "root"}:
+        taxonomy["classifiable"] = True
+        return taxonomy
+
     # 2026-08-10: Resolve standard Kraken2 taxid output through the report lookup.
     # Reason: Kraken2 writes a numeric taxid here, not a rank/name string.
     if "__" not in tax_lvl_and_name:
@@ -93,7 +102,9 @@ def determine_gene_revised(
 
     """Determines the gene for a given read, using a primer matching algorithm; output is either "16s", or a 1D matrix"""
 
-    gene = [0]*23
+    # 2026-08-10: Size the gene vector from the primer panel instead of 23.
+    # Reason: custom primer panels must not silently produce misaligned gene columns.
+    gene = [0] * max(0, len(primers) - 2)
 
     # first check for exact primer match
     for fwd_primer, rev_primer in primers_to_genes_dict:
@@ -129,7 +140,9 @@ def make_primers_to_genes_dict(primers):
         fwd_primer = parsed_primer_line[1]
         rev_primer = parsed_primer_line[2]
 
-        gene = [0]*23
+        # 2026-08-10: Size the gene vector from the primer panel instead of 23.
+        # Reason: custom primer panels must not silently produce misaligned gene columns.
+        gene = [0] * max(0, len(primers) - 2)
         if i == 0: # 16s gene
             gene = "16s"
         else:

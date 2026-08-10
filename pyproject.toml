@@ -3,7 +3,9 @@ requires = ["hatchling >= 1.26"]
 build-backend = "hatchling.build"
 
 [project]
-name = "argmapper"
+# 2026-08-10: Use the public DoTA-AMR distribution name.
+# Reason: the legacy repository name should not be used as the software name.
+name = "dota-amr"
 version = "0.1.0"
 authors = [
   { name="Julianna Yuen", email="juliannayuen07@gmail.com" },
@@ -17,3 +19,15 @@ classifiers = [
 ]
 license = "MIT"
 license-files = ["LICENSE"]
+# 2026-08-10: Keep separately distributed databases out of Python package archives.
+# Reason: the repository retrieves reference databases with Git LFS, so embedding them duplicates large files.
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/README.md",
+  "/LICENSE",
+  "/pyproject.toml",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dota_amr"]

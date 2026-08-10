@@ -25,7 +25,9 @@ def filter_barcodes_in_df(df, min_16s_reads: int = 5, max_contam: float = 0.1, m
             df.drop(index=barcode, inplace=True)
 
         # Normalize Klebsiella assignments
-        if "G - Klebsiella" in predicted_taxonomy:
+        # 2026-08-10: Only normalize rows that survived Stage 1 filtering.
+        # Reason: assigning with .loc after drop() can recreate a filtered barcode.
+        if barcode in df.index and "G - Klebsiella" in predicted_taxonomy:
             idx = predicted_taxonomy.find("G - Klebsiella")
             df.loc[barcode, "Predicted taxonomy"] = predicted_taxonomy[:idx] + "G - Klebsiella pneumoniae complex | S - None"
 
@@ -37,6 +39,12 @@ def filter_barcodes_in_df(df, min_16s_reads: int = 5, max_contam: float = 0.1, m
 
 
     # Stage 2 Filtering
+
+    # 2026-08-10: Stop cleanly when Stage 1 removes every barcode.
+    # Reason: df.iloc[0] below raises IndexError for an empty filtered table.
+    if df.empty:
+        print("Barcode filtering complete - final # of barcodes: 0")
+        return
 
     print(f"Stage 2: Filter out low-signal cells: specifically, taxonomic classifications that have <{min_barcodes} barcodes...")
 

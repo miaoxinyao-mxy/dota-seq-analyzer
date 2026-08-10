@@ -1,0 +1,6 @@
+# 2026-08-10: Exclude generated Python caches and local analysis outputs.
+# Reason: source releases should retain reproducible test inputs without committing regenerated files.
+__pycache__/
+*.py[cod]
+runs/
+database/arg_db/

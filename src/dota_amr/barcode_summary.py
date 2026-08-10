@@ -7,9 +7,11 @@ from mle_revised import parse_and_analyze_perfect_corrected_revised
 from filter_barcodes import filter_barcodes_in_df
 from helper_functions import get_arg_names
     
-def find_arg_data(packet_list: List[Dict]):
+def find_arg_data(packet_list: List[Dict], num_arg_genes: int):
 
-    gene_counts = [0]*23
+    # 2026-08-10: Allocate counts from the primer panel, not a fixed 23-gene assumption.
+    # Reason: the output vector must match the columns generated from the supplied primers file.
+    gene_counts = [0] * num_arg_genes
 
     for packet in packet_list:
         gene = packet["gene"]
@@ -49,7 +51,9 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
             = parse_and_analyze_perfect_corrected_revised(_16s_packet_list, 
                 p_match, p_none, p_error, alpha_prior, beta_prior,
                 min_confidence, min_noise_reads, noise_cutoff_ratio)
-            data_arg = find_arg_data(arg_packet_list)
+            # 2026-08-10: Pass the primer-derived ARG count into the summary writer.
+            # Reason: empty ARG barcodes still need a row with the correct number of columns.
+            data_arg = find_arg_data(arg_packet_list, len(get_arg_names(primers_filename)))
             write_content_tsv_row(barcode, total_16s_reads, technical_noise_count, predicted_taxonomy, confidence, contamination, data_arg, df, i) # content rows
 
             print(f"Processed {i} barcodes")

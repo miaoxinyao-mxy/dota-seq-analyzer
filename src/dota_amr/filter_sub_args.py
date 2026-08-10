@@ -22,10 +22,14 @@ def run_sub_arg_denoising_pipeline(filepath, baseline_gene, alpha, output_file):
     
     # 2.  (p_err)
     bg_data = df[df['Family'] == baseline_gene]['Cell_count'].sort_values(ascending=False).values
-    if len(bg_data) < 2:
-        print("bg data:", bg_data)
+    # 2026-08-10: Retain a single observed baseline sub-ARG instead of aborting.
+    # Reason: with no secondary baseline type, the observed secondary-error rate is zero.
+    if len(bg_data) == 0:
         raise ValueError(f"Baseline gene '{baseline_gene}' data insufficient.")
-    p_err = bg_data[1] / bg_data[0]
+    if len(bg_data) == 1:
+        p_err = 0.0
+    else:
+        p_err = bg_data[1] / bg_data[0]
     print(f"[*] System Baseline Error Rate ({baseline_gene}): {p_err:.4%}")
 
     final_results = []
