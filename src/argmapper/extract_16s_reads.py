@@ -213,8 +213,13 @@ def create_16s_only_fastq(
                 trimmed_f_seq = f_seq[len(fwd_primer):]
                 trimmed_r_seq = r_seq[(primer_start_num + len(rev_primer)):]
 
-                kraken_only_16s_r1.write(f"{id_f}\n{trimmed_f_seq}\n+\n{f_quality}\n")
-                kraken_only_16s_r2.write(f"{id_r}\n{trimmed_r_seq}\n+\n{r_quality}\n")
+                # 2026-08-10: Trim quality strings at the same coordinates as sequences.
+                # Reason: FASTQ sequence and quality lines must have identical lengths.
+                trimmed_f_quality = f_quality[len(fwd_primer):]
+                trimmed_r_quality = r_quality[(primer_start_num + len(rev_primer)):]
+
+                kraken_only_16s_r1.write(f"{id_f}\n{trimmed_f_seq}\n+\n{trimmed_f_quality}\n")
+                kraken_only_16s_r2.write(f"{id_r}\n{trimmed_r_seq}\n+\n{trimmed_r_quality}\n")
 
             # prepare for next read
             f_line = r1.readline()
