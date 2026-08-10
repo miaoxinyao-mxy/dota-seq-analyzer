@@ -262,11 +262,16 @@ def match_ids_to_genes_bc(
         for line in b_with_ids_file:
             bc, ids = line.strip().split(": ")
             if bc in filtered_bcs:
-                arg_ids = ids.split(" | ")[1]
-                if "SH0" in arg_ids: # filter out blank IDs
-                    arg_ids = arg_ids.replace("|", "").strip().split(", ")
-                    arg_ids_with_bs = [f"{id}|{bc}" for id in arg_ids]
-                    filtered_arg_ids_with_bs.extend(arg_ids_with_bs)
+                arg_ids_field = ids.split(" | ")[1]
+                # 2026-08-10: Detect ARG read IDs from field content instead of an instrument-specific prefix.
+                # Reason: valid FASTQ IDs do not necessarily contain "SH0", and must not be silently discarded.
+                arg_ids = [
+                    read_id.strip(" |")
+                    for read_id in arg_ids_field.split(",")
+                    if read_id.strip(" |")
+                ]
+                arg_ids_with_bs = [f"{read_id}|{bc}" for read_id in arg_ids]
+                filtered_arg_ids_with_bs.extend(arg_ids_with_bs)
 
     filtered_arg_ids = [id_with_b.split("|")[0] for id_with_b in filtered_arg_ids_with_bs]
 
