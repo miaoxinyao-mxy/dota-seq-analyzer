@@ -41,12 +41,6 @@ The taxonomic reference database is provided by the project workflow. Users do n
 
 The optional reference FASTA is only needed when the optional sequence-resolution step is selected. It is supplied separately as part of the relevant analysis workflow.
 
-### Current workflow status
-
-The repository currently contains the ARGMapper pipeline modules and a development configuration script. `src/argmapper/driver.sh` contains an in-progress, machine-specific workflow configuration and is not currently a stable public command-line entry point.
-
-The end-to-end command-line interface is being packaged. Until that interface is finalized, users should not assume that `bash src/argmapper/driver.sh` will run the complete workflow on a new machine.
-
 ## Optional: PrimerPicker
 
 PrimerPicker is an optional utility for designing multiplex primer pools when validated primer sequences are not already available.
