@@ -22,7 +22,7 @@ python -m pip install -e .
 
 - paired R1 and R2 FASTQ files
 - a DoTA-Seq primer CSV file
-- optionally, a custom AMR reference FASTA for matching detected sequences to known alleles
+- optionally, a custom AMR reference FASTA; otherwise, DoTA-AMR uses the included reference database
 
 The taxonomic and AMR reference databases are included with the repository.
 
@@ -34,11 +34,10 @@ Run the complete single-cell workflow from the repository root:
 dotaseq-amr -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results
 ```
 
-The default sub-ARG baseline is `CTX-M`. For a different primer panel, set a target from the primer CSV:
+To use a custom reference FASTA instead of the included database:
 
 ```bash
-dotaseq-amr -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results \
-  --baseline-gene TARGET
+dotaseq-amr -1 reads1.fastq -2 reads2.fastq -p primers.csv -r reference.fa -o results
 ```
 
 Run `dotaseq-amr --help` for database overrides and the Kraken2 thread option.

@@ -35,14 +35,11 @@ def main() -> None:
     parser.add_argument("-2", "--r2", required=True, help="R2 FASTQ file")
     parser.add_argument("-p", "--primers", required=True, help="DoTA-Seq primer CSV file")
     parser.add_argument("-o", "--output", required=True, help="Output directory")
-    parser.add_argument(
-        "--baseline-gene",
-        default="CTX-M",
-        help="Primer-defined AMR target used to estimate sub-ARG background (default: CTX-M)",
-    )
     parser.add_argument("--threads", type=int, default=4, help="Kraken2 threads (default: 4)")
     parser.add_argument("--taxonomy-db", help="Extracted Kraken2 taxonomy database directory")
-    parser.add_argument("--amr-fasta", help="AMR reference FASTA used for BLAST annotation")
+    # 2026-08-10: Allow a custom reference while retaining the project reference as the default.
+    # Reason: users should not need to supply a FASTA for the standard analysis.
+    parser.add_argument("-r", "--reference", help="Custom AMR reference FASTA (default: project database)")
     args = parser.parse_args()
 
     r1 = Path(args.r1).expanduser().resolve()
@@ -62,9 +59,9 @@ def main() -> None:
         if args.taxonomy_db
         else _find_project_database("database/mnt/workspace2/jamie/ref/k2__gg2")
     )
-    amr_fasta = (
-        Path(args.amr_fasta).expanduser().resolve()
-        if args.amr_fasta
+    reference = (
+        Path(args.reference).expanduser().resolve()
+        if args.reference
         else _find_project_database("database/arg_db/all_clean.fasta")
     )
     if not taxonomy_db.is_dir():
@@ -72,10 +69,10 @@ def main() -> None:
             "taxonomy database not found; extract database/dota-amr-taxonomy-db.tar.gz "
             "or provide --taxonomy-db"
         )
-    if not amr_fasta.is_file():
+    if not reference.is_file():
         parser.error(
             "AMR reference FASTA not found; extract database/dota-amr-arg-db.tar.gz "
-            "or provide --amr-fasta"
+            "or provide -r/--reference"
         )
 
     for directory in (
@@ -219,6 +216,8 @@ def main() -> None:
         ],
         output_dir,
     )
+    # 2026-08-10: Always annotate against either the bundled or user-supplied reference.
+    # Reason: supplying -r changes the reference source, not the analysis stages.
     _run_step(
         "Resolve AMR subtypes",
         [
@@ -236,8 +235,6 @@ def main() -> None:
             str(r2),
             "--primers_file",
             str(primers),
-            "--baseline_gene",
-            args.baseline_gene,
         ],
         output_dir,
     )
@@ -249,7 +246,7 @@ def main() -> None:
             "--sub_arg_seqs_list",
             "tmp/sub_arg_seqs_list.txt",
             "--input_fasta",
-            str(amr_fasta),
+            str(reference),
             "--final_barcode_summary_tsv",
             "reports/cell_amr_matrix.tsv",
             "--first_gene_column_num",

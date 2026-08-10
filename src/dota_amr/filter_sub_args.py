@@ -12,7 +12,7 @@ def exp_decay(x, a, b, c):
     """ y = a * e^(-bx) + c"""
     return a * np.exp(-b * x) + c
 
-def run_sub_arg_denoising_pipeline(filepath, baseline_gene, alpha, output_file):
+def run_sub_arg_denoising_pipeline(filepath, alpha, output_file):
     
     df = pd.read_csv(filepath, sep='\t')
 
@@ -20,17 +20,14 @@ def run_sub_arg_denoising_pipeline(filepath, baseline_gene, alpha, output_file):
     #df['Family'] = df['Sub-ARG_Arbitrary_Name'].str.extract(r'^(.*?)_<\d+>$')
     print(df["Family"])
     
-    # 2.  (p_err)
-    bg_data = df[df['Family'] == baseline_gene]['Cell_count'].sort_values(ascending=False).values
-    # 2026-08-10: Retain a single observed baseline sub-ARG instead of aborting.
-    # Reason: with no secondary baseline type, the observed secondary-error rate is zero.
-    if len(bg_data) == 0:
-        raise ValueError(f"Baseline gene '{baseline_gene}' data insufficient.")
-    if len(bg_data) == 1:
-        p_err = 0.0
+    # 2026-08-10: Infer the optional decay-control rate internally and fall back to family-wise decay.
+    # Reason: primer panels and small read subsets may not contain enough meca observations.
+    decay_control = df[df['Family'].str.casefold() == 'meca']['Cell_count'].sort_values(ascending=False).values
+    p_err = decay_control[1] / decay_control[0] if len(decay_control) >= 2 else 0.0
+    if len(decay_control) >= 2:
+        print(f"[*] Estimated sequencing-noise rate: {p_err:.4%}")
     else:
-        p_err = bg_data[1] / bg_data[0]
-    print(f"[*] System Baseline Error Rate ({baseline_gene}): {p_err:.4%}")
+        print("[*] Using family-wise decay filtering.")
 
     final_results = []
     

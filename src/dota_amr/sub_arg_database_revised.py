@@ -20,7 +20,7 @@ def create_sub_arg_barcode_summary(
     sub_arg_barcode_summary_tsv: str, primers_file: str, 
     sub_arg_seqs_list: str, 
     filtered_sub_arg_barcode_summary_tsv: str, 
-    baseline_gene: str, filtered_stats_cells_per_sub_arg_tsv: str, extra_mle_info_sub_arg_tsv,
+    filtered_stats_cells_per_sub_arg_tsv: str, extra_mle_info_sub_arg_tsv,
     p_match, p_none, p_error, alpha_prior, beta_prior,
     min_confidence, min_noise_reads, noise_cutoff_ratio,
     alpha=0.05, max_shift_sub_arg=2, max_mm_sub_arg=0):
@@ -35,16 +35,8 @@ def create_sub_arg_barcode_summary(
     # Read in genes_eligible_for_sub_args
     genes_eligible_for_sub_args = get_genes_eligible_for_sub_args(primers_file)
     
-    # Adjusting genes_eligible_for_sub_args to include baseline gene, if not already included
-
-    # Necessary so that baseline gene can be used in filtering sub-ARGs
-    # However, if baseline gene is not actually eligible for sub-ARGs, 
-    # it will be treated as such in the final barcode summary - so its inclusion in genes_eligible_for_sub_args will be temporary
-    if baseline_gene not in genes_eligible_for_sub_args:
-        genes_eligible_for_sub_args.append(baseline_gene)
-        is_baseline_gene_eligible_for_sub_args = False
-    else:
-        is_baseline_gene_eligible_for_sub_args = True
+    # 2026-08-10: Keep the sub-ARG gene vector entirely determined by the primer CSV.
+    # Reason: filtering must not inject a control gene that is absent from the selected primer panel.
 
     # Obtaining useful parameter values
 
@@ -105,16 +97,15 @@ def create_sub_arg_barcode_summary(
     # 2) Filter out sub-ARGs with too few cells associated with them, and obtain final list of sub-ARGs to be used
     print("C. 2) Filtering sub-ARGs, and obtaining final names list of sub-ARGs to be used...")
     print()
-    final_sub_arg_names = run_sub_arg_denoising_pipeline(sub_arg_seqs_list, 
-                        baseline_gene, alpha, filtered_stats_cells_per_sub_arg_tsv)
+    final_sub_arg_names = run_sub_arg_denoising_pipeline(
+        sub_arg_seqs_list, alpha, filtered_stats_cells_per_sub_arg_tsv)
 
-    # 3) Modify barcode summary - specifically, account for whether or not the baseline gene is actually
-    #    eligible for sub-ARGs, and replace any filtered-out sub-ARGs with their respective parent ARG
+    # 3) Replace filtered-out sub-ARGs with their respective parent ARG.
     print("C. 3) Modifying barcode summary based on filtered sub-ARGs...")
     print()
     modify_sub_arg_barcode_summary(
         df_sub_arg, final_sub_arg_names, filtered_sub_arg_barcode_summary_tsv,
-        baseline_gene, is_baseline_gene_eligible_for_sub_args, genes_eligible_for_sub_args)    
+        genes_eligible_for_sub_args)
 
 
 def write_sub_arg_barcode_summary(
@@ -211,12 +202,10 @@ def write_sub_arg_barcode_summary(
 
 def modify_sub_arg_barcode_summary(
     df_sub_arg, final_sub_arg_names, filtered_sub_arg_barcode_summary_tsv,
-    baseline_gene, is_baseline_gene_eligible_for_sub_args, genes_eligible_for_sub_args):
+    genes_eligible_for_sub_args):
 
-    # if baseline gene is not actually eligible for sub-ARGs,
-    # modify its column to include only the parent ARG name, instead of sub-ARG names
-    if not is_baseline_gene_eligible_for_sub_args:
-        df_sub_arg.loc[df_sub_arg[baseline_gene] != "0", baseline_gene] = baseline_gene
+    # 2026-08-10: Apply one consistent parent-gene fallback to primer-selected genes.
+    # Reason: there is no longer a user-visible or forced baseline gene.
 
     # for cells containing sub-ARGs that were filtered out, replace the sub-ARG name with the parent ARG name
     for arg in genes_eligible_for_sub_args:
@@ -621,7 +610,6 @@ def main():
     parser.add_argument("--primers_file", type=str, required=True)
     parser.add_argument("--sub_arg_seqs_list", type=str, default="tmp/sub_arg_seqs_list.txt")
     parser.add_argument("--filtered_sub_arg_barcode_summary_tsv", type=str, default="reports/cell_amr_matrix.tsv")
-    parser.add_argument("--baseline_gene", type=str, required=True)
     parser.add_argument("--filtered_stats_cells_per_sub_arg_tsv", type=str, default="tmp/filtered_stats_cells_per_sub_arg.tsv")
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--max_shift_sub_arg", type=int, default=2)
@@ -675,7 +663,7 @@ def main():
         args.sub_arg_barcode_summary_tsv, args.primers_file, 
         args.sub_arg_seqs_list, 
         args.filtered_sub_arg_barcode_summary_tsv, 
-        args.baseline_gene, args.filtered_stats_cells_per_sub_arg_tsv, 
+        args.filtered_stats_cells_per_sub_arg_tsv,
         args.extra_mle_info_sub_arg_tsv,
         args.p_match, args.p_none, args.p_error, args.alpha_prior, args.beta_prior,
         args.min_confidence, args.min_noise_reads, args.noise_cutoff_ratio,
