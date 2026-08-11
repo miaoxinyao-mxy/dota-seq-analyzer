@@ -97,7 +97,7 @@ def check_primers(primers_file: str):
     - No duplicate paired primer sequences
     - Primer sequences only contain A,T,C,G
     - First primer is 16s, to optimize program run-time
-    - Mode is blank, "ssr", or "inv"; legacy single/family files remain accepted
+    - Mode is blank or "ssr"; legacy single/family files remain accepted
     Returns either a string describing the first observed error (meaning it failed at least 1 test);
     or returns "Valid" if passed all tests. 
     """
@@ -105,7 +105,7 @@ def check_primers(primers_file: str):
     all_primer_names = []
     all_primer_seqs = []
 
-    # 2026-08-10: Validate the new optional Mode column with CSV-aware parsing.
+    # 2026-08-11: Validate the new optional Mode column with CSV-aware parsing.
     # Reason: blank Mode values are valid and quoted target names must not break column parsing.
     with open(primers_file, 'r', encoding='utf-8-sig', newline='') as f:
         reader = csv.reader(f)
@@ -143,8 +143,8 @@ def check_primers(primers_file: str):
                     return f"<Primer File> Sequence error: R primer {seq[1]} contains letters other than A,T,C,G"
 
             mode = line[3].strip().casefold()
-            if is_new_schema and mode not in ["", "ssr", "inv"]:
-                return f"<Primer File> Mode error: {primer} should use blank, 'ssr', or 'inv'"
+            if is_new_schema and mode not in ["", "ssr"]:
+                return f"<Primer File> Mode error: {primer} should use blank or 'ssr'"
             if is_legacy_schema and mode not in ["single", "family"]:
                 return f"<Primer File> Legacy Sub-ARG error: {primer} should use 'single' or 'family'"
 

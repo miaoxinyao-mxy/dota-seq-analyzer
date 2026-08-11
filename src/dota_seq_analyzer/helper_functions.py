@@ -25,10 +25,10 @@ def get_arg_names(primers_file: str) -> List[str]:
     return arg_names 
 
 
-# 2026-08-10: Read optional target-analysis modes from the primer CSV.
-# Reason: blank targets use standard detection while only SSR and inversion targets need PV analysis.
+# 2026-08-11: Read optional target-analysis modes from the primer CSV.
+# Reason: blank targets use standard detection while only SSR targets need PV analysis.
 def get_target_modes(primers_file: str) -> Dict[str, str]:
-    """Return non-taxonomy target names mapped to blank, ssr, or inv modes."""
+    """Return non-taxonomy target names mapped to blank or ssr modes."""
     with open(primers_file, "r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
@@ -46,7 +46,7 @@ def get_target_modes(primers_file: str) -> Dict[str, str]:
                 mode = (row.get(mode_column) or "").strip().casefold()
             elif legacy_column:
                 # 2026-08-10: Treat legacy single/family files as having no PV mode.
-                # Reason: old primer panels remain usable without assigning SSR or inversion analysis.
+                # Reason: old primer panels remain usable without assigning SSR analysis.
                 mode = ""
             else:
                 mode = ""

@@ -26,10 +26,10 @@ Primer,F,R,Mode
 16s,F_PRIMER,R_PRIMER,
 target_1,F_PRIMER,R_PRIMER,
 target_2,F_PRIMER,R_PRIMER,ssr
-target_3,F_PRIMER,R_PRIMER,inv
+target_3,F_PRIMER,R_PRIMER,ssr
 ```
 
-Leave `Mode` blank for standard target detection. Use `ssr` or `inv` only for phase-variation targets.
+Leave `Mode` blank for standard target detection. Use `ssr` for phase-variation targets.
 
 ## Run
 
@@ -44,8 +44,6 @@ dota-seq-analyzer -1 reads1.fastq -2 reads2.fastq -p primers.csv -r reference.fa
 ```
 
 An optional AMR reference is included in `database/amr-reference-db.tar.gz`.
-
-When an `inv` target and a complete corresponding reference are both available, DoTA-Seq Analyzer also performs BWA-based inversion analysis. INV targets without complete reference coverage are skipped.
 
 Run `dota-seq-analyzer --help` for database overrides and the Kraken2 thread option.
 

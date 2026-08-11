@@ -72,7 +72,9 @@ def main() -> None:
         parser.error(f"reference FASTA not found: {reference}")
 
     target_modes = get_target_modes(str(primers))
-    pv_requested = any(mode in {"ssr", "inv"} for mode in target_modes.values())
+    # 2026-08-11: Trigger phase-variation analysis only for SSR primer targets.
+    # Reason: INV is outside the supported workflow.
+    pv_requested = any(mode == "ssr" for mode in target_modes.values())
 
     for directory in (
         output_dir,
@@ -256,8 +258,6 @@ def main() -> None:
             "--primers_file",
             str(primers),
         ]
-        if reference is not None and any(mode == "inv" for mode in target_modes.values()):
-            pv_command.extend(["--reference", str(reference)])
         _run_step(
             "Analyze phase variation",
             pv_command,

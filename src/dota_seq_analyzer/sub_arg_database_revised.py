@@ -433,12 +433,12 @@ def get_genes_eligible_for_sub_args(
     Those classified as "family" are eligible to have sub-ARGs.
     Returns a list of eligible genes.
     """
-    # 2026-08-10: Reconstruct sequences for PV targets or every target when a reference is supplied.
+    # 2026-08-11: Reconstruct sequences for PV targets or every target when a reference is supplied.
     # Reason: blank targets need only detection unless reference annotation was explicitly requested.
     target_modes = get_target_modes(primers_file)
     if include_all_targets:
         return list(target_modes)
-    return [target for target, mode in target_modes.items() if mode in {"ssr", "inv"}]
+    return [target for target, mode in target_modes.items() if mode == "ssr"]
 
 def convert_gene_names_to_nums(
     selected_gene_names: List[str], arg_names: List[str]) -> List[int]:
