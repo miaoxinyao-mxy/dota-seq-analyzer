@@ -182,7 +182,7 @@ def main():
     parser.add_argument("--blastn_sub_arg_tsv", type=str, default="reports/reference_matches.tsv")
     parser.add_argument("--query_fasta", type=str, default="tmp/query_reads.fa")
     parser.add_argument("--input_fasta", type=str, required=True)
-    parser.add_argument("--db", type=str, default="tmp/blast_db/dota_profile")
+    parser.add_argument("--db", type=str, default="tmp/blast_db/dota_seq_analyzer")
     parser.add_argument("--final_barcode_summary_tsv", type=str, required=True)
     parser.add_argument("--first_gene_column_num", type=int, required=True)
     

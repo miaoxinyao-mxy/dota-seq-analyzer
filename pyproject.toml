@@ -3,9 +3,9 @@ requires = ["hatchling >= 1.26"]
 build-backend = "hatchling.build"
 
 [project]
-# 2026-08-10: Rename the public distribution to DoTA-Profile.
+# 2026-08-11: Rename the public distribution to DoTA-Seq Analyzer.
 # Reason: the workflow now supports arbitrary targets and phase variation, not only AMR.
-name = "dota-profile"
+name = "dota-seq-analyzer"
 version = "0.1.0"
 authors = [
   { name="Julianna Yuen", email="juliannayuen07@gmail.com" },
@@ -20,10 +20,10 @@ classifiers = [
 license = "MIT"
 license-files = ["LICENSE"]
 
-# 2026-08-10: Install the complete workflow as the public dota-profile command.
+# 2026-08-11: Install the complete workflow as the public dota-seq-analyzer command.
 # Reason: the command name should match the broader software name.
 [project.scripts]
-dota-profile = "dota_profile.cli:main"
+dota-seq-analyzer = "dota_seq_analyzer.cli:main"
 
 # 2026-08-10: Keep separately distributed databases out of Python package archives.
 # Reason: the repository retrieves reference databases with Git LFS, so embedding them duplicates large files.
@@ -36,4 +36,4 @@ include = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dota_profile"]
+packages = ["src/dota_seq_analyzer"]

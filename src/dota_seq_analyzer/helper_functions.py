@@ -5,7 +5,7 @@ from typing import Dict, List
 
 
 # 2026-08-10: Create parent directories for every command-line output path.
-# Reason: DoTA-Profile separates temporary, report, and figure files without requiring manual mkdir commands.
+# Reason: DoTA-Seq Analyzer separates temporary, report, and figure files without requiring manual mkdir commands.
 def ensure_output_directories(*output_paths: str) -> None:
     for output_path in output_paths:
         parent = os.path.dirname(os.path.abspath(output_path))

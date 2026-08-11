@@ -1,6 +1,6 @@
-# 2026-08-10: Rename the reproducible environment for DoTA-Profile.
+# 2026-08-11: Rename the reproducible environment for DoTA-Seq Analyzer.
 # Reason: the environment should match the public software name.
-name: dota-profile
+name: dota-seq-analyzer
 
 channels:
   - conda-forge

@@ -1,4 +1,4 @@
-"""Export the final DoTA-Profile cell-level result as JSON Lines."""
+"""Export the final DoTA-Seq Analyzer cell-level result as JSON Lines."""
 
 import argparse
 import json
@@ -55,7 +55,7 @@ def _is_detected(value):
 
 
 def export_results(input_tsv, primers_file, output_jsonl, phase_variation_tsv=None):
-    """Write one complete single-cell DoTA-Profile result per JSONL line."""
+    """Write one complete single-cell DoTA-Seq Analyzer result per JSONL line."""
     dataframe = pd.read_csv(input_tsv, sep="\t", index_col="Barcode")
     gene_names = get_arg_names(primers_file)
     missing_genes = [gene for gene in gene_names if gene not in dataframe.columns]
@@ -121,11 +121,11 @@ def export_results(input_tsv, primers_file, output_jsonl, phase_variation_tsv=No
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Export the final DoTA-Profile single-cell result as JSONL."
+        description="Export the final DoTA-Seq Analyzer single-cell result as JSONL."
     )
     parser.add_argument("--input_tsv", required=True)
     parser.add_argument("--primers_file", required=True)
-    parser.add_argument("--output_jsonl", default="dota_profile_results.jsonl")
+    parser.add_argument("--output_jsonl", default="dota_seq_analyzer_results.jsonl")
     parser.add_argument("--phase_variation_tsv")
     args = parser.parse_args()
 

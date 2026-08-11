@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Run the complete DoTA-Profile workflow from one public command."""
+"""Run the complete DoTA-Seq Analyzer workflow from one public command."""
 
-# 2026-08-10: Add a single supported entry point for the complete DoTA-Profile workflow.
+# 2026-08-11: Rename the public entry point to DoTA-Seq Analyzer.
 # Reason: users should run R1/R2 data with one command instead of invoking internal modules manually.
 
 import argparse
@@ -15,7 +15,7 @@ from .helper_functions import get_target_modes
 
 def _run_step(name: str, command: list[str], output_dir: Path) -> None:
     """Run one pipeline stage and stop immediately if it fails."""
-    print(f"\n[DoTA-Profile] {name}", flush=True)
+    print(f"\n[DoTA-Seq Analyzer] {name}", flush=True)
     subprocess.run(command, cwd=output_dir, check=True)
 
 
@@ -31,7 +31,7 @@ def _find_project_database(relative_path: str) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="dota-profile",
+        prog="dota-seq-analyzer",
         description="Profile targeted genes and phase variation in single-cell DoTA-Seq data.",
     )
     parser.add_argument("-1", "--r1", required=True, help="R1 FASTQ file")
@@ -41,7 +41,7 @@ def main() -> None:
     parser.add_argument("--threads", type=int, default=4, help="Kraken2 threads (default: 4)")
     parser.add_argument("--taxonomy-db", help="Extracted Kraken2 taxonomy database directory")
     # 2026-08-10: Run reference annotation only when a FASTA is explicitly supplied.
-    # Reason: DoTA-Profile supports arbitrary targets that do not belong in the bundled AMR database.
+    # Reason: DoTA-Seq Analyzer supports arbitrary targets that do not belong in the bundled AMR database.
     parser.add_argument("-r", "--reference", help="Optional reference FASTA for BLAST annotation")
     args = parser.parse_args()
 
@@ -65,7 +65,7 @@ def main() -> None:
     reference = Path(args.reference).expanduser().resolve() if args.reference else None
     if not taxonomy_db.is_dir():
         parser.error(
-            "taxonomy database not found; extract database/dota-profile-taxonomy-db.tar.gz "
+            "taxonomy database not found; extract database/dota-seq-analyzer-taxonomy-db.tar.gz "
             "or provide --taxonomy-db"
         )
     if reference is not None and not reference.is_file():
@@ -277,7 +277,7 @@ def main() -> None:
                 "--blastn_sub_arg_tsv",
                 "reports/reference_matches.tsv",
                 "--db",
-                "tmp/blast_db/dota_profile",
+                "tmp/blast_db/dota_seq_analyzer",
                 "--final_barcode_summary_tsv",
                 "reports/cell_target_matrix.tsv",
                 "--first_gene_column_num",
@@ -317,7 +317,7 @@ def main() -> None:
         "--primers_file",
         str(primers),
         "--output_jsonl",
-        "dota_profile_results.jsonl",
+        "dota_seq_analyzer_results.jsonl",
     ]
     if pv_requested:
         export_command.extend([
@@ -325,7 +325,7 @@ def main() -> None:
         ])
     _run_step("Export JSONL", export_command, output_dir)
 
-    print(f"\nDoTA-Profile complete: {output_dir}", flush=True)
+    print(f"\nDoTA-Seq Analyzer complete: {output_dir}", flush=True)
 
 
 if __name__ == "__main__":
