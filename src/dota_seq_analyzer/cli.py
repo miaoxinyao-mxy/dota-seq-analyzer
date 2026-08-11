@@ -73,7 +73,7 @@ def main() -> None:
 
     target_modes = get_target_modes(str(primers))
     # 2026-08-11: Trigger phase-variation analysis only for SSR primer targets.
-    # Reason: INV is outside the supported workflow.
+    # Reason: SSR is the only supported phase-variation mode.
     pv_requested = any(mode == "ssr" for mode in target_modes.values())
 
     for directory in (
