@@ -15,7 +15,7 @@ def find_arg_data(packet_list: List[Dict], num_arg_genes: int):
 
     for packet in packet_list:
         gene = packet["gene"]
-        # assume gene is a 1D matrix with 23 numbers
+        # assume gene is a 1D matrix, with a length corresponding to # of different possible ARGs
         # all numbers should be 0, except for one 1
         for i in range(len(gene)):
             if gene[i] == 1:
