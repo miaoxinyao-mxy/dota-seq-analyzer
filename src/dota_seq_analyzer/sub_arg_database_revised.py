@@ -27,7 +27,7 @@ def create_sub_arg_barcode_summary(
 
     # note that input barcode summary should have already undergone first round of filtering 
     # (i.e. min 16s reads, contamination, unclassified taxonomy, min barcodes),
-    # as well as ARG filtering
+    # as well as ARG background noise removal
 
     #====================================================================================================
     
