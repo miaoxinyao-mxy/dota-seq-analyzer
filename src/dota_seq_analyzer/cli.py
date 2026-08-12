@@ -162,12 +162,6 @@ def main() -> None:
             "tmp/arg_R2.fastq",
             "--unclassified_r2_fastq",
             "tmp/unclassified_R2.fastq",
-            "--_16s_packet_filename",
-            "tmp/packets_16s",
-            "--arg_packet_filename",
-            "tmp/packets_arg",
-            "--unclassified_packet_filename",
-            "tmp/packets_unclassified",
         ],
         output_dir,
     )
