@@ -101,7 +101,6 @@ def write_b_with_ids_to_file(clustered_b_with_ids: Dict, b_with_ids_filename: st
 def create_b_with_ids_file(
     _16s_rev_fastq: str, arg_rev_fastq: str, unclassified_rev_fastq: str,
     b_with_ids_filename: str, 
-    _16s_packets: str, arg_packets: str, unclassified_packets: str, 
     barcode_shift: int = 1, barcode_len: int = 20):
     
     bcs_with_counts, all_b_with_ids = extract_all_b_with_ids(_16s_rev_fastq, arg_rev_fastq, unclassified_rev_fastq, barcode_len)
@@ -121,9 +120,6 @@ def main():
         "--unclassified_r2_fastq", "--unclassified_rev_fastq",
         dest="unclassified_rev_fastq", type=str, required=True,
     )
-    parser.add_argument("--_16s_packet_filename", type=str, required=True)
-    parser.add_argument("--arg_packet_filename", type=str, required=True)
-    parser.add_argument("--unclassified_packet_filename", type=str, required=True)
     parser.add_argument("--max_shift_barcode", type=int, default = 1)
     parser.add_argument("--barcode_len", type=int, default=20)
     # 2026-08-10: Route the barcode-to-read mapping to tmp by default.
@@ -146,21 +142,10 @@ def main():
     if not os.path.exists(args.unclassified_rev_fastq):
         print(f"❌ Error: input file not found: {args.unclassified_rev_fastq}")
         return
-    if not os.path.exists(args._16s_packet_filename):
-        print(f"❌ Error: input file not found: {args._16s_packet_filename}")
-        return
-    if not os.path.exists(args.arg_packet_filename):
-        print(f"❌ Error: input file not found: {args.arg_packet_filename}")
-        return
-    if not os.path.exists(args.unclassified_packet_filename):
-        print(f"❌ Error: input file not found: {args.unclassified_packet_filename}")
-        return
 
     create_b_with_ids_file(
         args._16s_rev_fastq, args.arg_rev_fastq, args.unclassified_rev_fastq,
-        args.b_with_ids_filename,
-        args._16s_packet_filename, args.arg_packet_filename, args.unclassified_packet_filename, 
-        args.max_shift_barcode, args.barcode_len)
+        args.b_with_ids_filename, args.max_shift_barcode, args.barcode_len)
     
 if __name__ == "__main__":
     main()
