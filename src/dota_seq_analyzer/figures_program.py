@@ -344,9 +344,9 @@ def jackpottocurve(fig, ax, barsize, type_of_reads, vline):
     X_lorenz = np.insert(X_lorenz, 0, 0) #insert the 0,0 point
     X = np.insert(X, 0, 0) #insert 0,0 point for X as well
 
-    # scatter plot of the jackpottocurve (modificaiton of the lorenz curve)
+    # scatter plot of the jackpottocurve (modification of the lorenz curve)
     ax.scatter(X, X_lorenz, 
-                marker='o', color='darkgreen', s=100) #x axis is cumulative barcode number, yaxis is cumulative total # reads
+                marker='o', color='indigo', s=100) #x axis is cumulative barcode number, yaxis is cumulative total # reads
     ax.set_title(f"{type_of_reads} Reads")
     ax.set_xlim((1,max(barsize)))
     ax.set_xscale("log", base=10)
