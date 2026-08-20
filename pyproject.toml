@@ -8,7 +8,9 @@ build-backend = "hatchling.build"
 name = "dota-seq-analyzer"
 version = "0.1.0"
 authors = [
+  { name="Xinyao Miao", email="miaoxinyao.xjtu@gmail.com" },
   { name="Julianna Yuen", email="juliannayuen07@gmail.com" },
+  { name="Freeman Lan", email="freeman.lan@utoronto.ca" },
 ]
 description = "Single-cell profiling of targeted microbial genes and phase variation"
 readme = "README.md"
