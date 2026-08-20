@@ -67,6 +67,14 @@ DoTA-Seq Analyzer was developed for analysis of single-cell targeted sequencing 
 
 Lan F, Saba J, Ross TD, Zhou Z, Krauska K, Anantharaman K, Landick R, Venturelli OS. Massively parallel single-cell sequencing of diverse microbial populations. *Nature Methods* 21, 228–235 (2024). https://doi.org/10.1038/s41592-023-02157-7
 
+## Contact / Support
+
+If you encounter any bugs or have questions about the code, please feel free to reach out to us:
+* **Xinyao Miao**: miaoxinyao.xjtu@gmail.com
+* **Julianna Yuen**: juliannayuen07@gmail.com
+
+For general academic inquiries, please contact **Freeman Lan**: freeman.lan@utoronto.ca
+
 ## License
 
 This project is released under the MIT License. See [LICENSE](LICENSE).
