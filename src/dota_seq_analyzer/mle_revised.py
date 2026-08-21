@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import math
 from collections import Counter
 from typing import List, Dict
