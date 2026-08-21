@@ -102,6 +102,7 @@ def read_b_with_ids(b_with_ids_filename: str) -> Dict[str, List[str]]:
 
 
 def read_16s_revised(fwd_16s_fastq: str, rev_16s_fastq: str) -> Dict[str, List[str]]:
+    """Read in the sequences for all 16s reads"""
     _16s_reads = {}
 
     with open(fwd_16s_fastq, 'r') as fwd_file, open(rev_16s_fastq, 'r') as rev_file:
@@ -126,36 +127,6 @@ def read_16s_revised(fwd_16s_fastq: str, rev_16s_fastq: str) -> Dict[str, List[s
 
     return _16s_reads
     
-
-def read_16s(_16s_packets_filename: str, fwd_fastq_filename: str, rev_fastq_filename: str):
-    """Loads the raw sequence mapping database for paired-end R1 and R2 reads."""
-
-    reads = {}
-
-    with open(_16s_packets_filename, 'r') as _16s_packets_file, \
-    open(fwd_fastq_filename, 'r') as fwd_fastq_file, \
-    open(rev_fastq_filename, 'r') as rev_fastq_file:
-        
-        for line in _16s_packets_file:
-            id = line.split(", ")[0].replace('"', '').replace('{"ID": ', '').strip()
-
-            fwd_id = fwd_fastq_file.readline()
-            rev_id = rev_fastq_file.readline()
-
-            while (fwd_id != "") and (rev_id != ""):
-
-                fwd_seq = fwd_fastq_file.readline().strip()
-                rev_seq = rev_fastq_file.readline().strip()
-
-                if (id in fwd_id) and (id in rev_id):
-                    reads[id] = {"R1": fwd_seq, "R2": rev_seq}
-                    break
-
-                for _ in range(3): # account for extra lines in 4-line fastq format
-                    fwd_id = fwd_fastq_file.readline()
-                    rev_id = rev_fastq_file.readline()
-    return reads
-
 
 def extract_core(r1, r2):
     """Slices and concatenates the predefined hypervariable core regions from R1 and R2."""
@@ -273,11 +244,14 @@ def conduct_asv_typing(
     asv_barcode_summary_tsv_filename: str, global_asv_tsv_filename: str,
     primers_file: str, filter_corrupted: bool = False
     ):
+    """Run the full ASV typing algorithm"""
 
+    # read in input files
     final_barcodes = read_final_barcodes(barcode_summary_tsv_filename)
     bc_to_ids = read_b_with_ids(b_with_ids_filename)
     _16s_reads = read_16s_revised(fwd_16s_fastq, rev_16s_fastq)
 
+    # run ASV typing for each cell
     barcode_summary = {}
     global_counter = Counter()
     for bc in final_barcodes:
@@ -296,7 +270,7 @@ def conduct_asv_typing(
             global_counter[s["consensus_seq"]] += 1
 
 
-    # write global asv output file, which contains all the ASV sequences matched to their names (e.g. Core_ASV_1)
+    # write global ASV output file, which contains all the ASV sequences matched to their names (e.g. ASV_1)
     seq_to_asv = {}
     with open(global_asv_tsv_filename, "w") as out:
         out.write("Core_ASV_ID\tcell_count\tcore_sequence\n")
@@ -305,6 +279,8 @@ def conduct_asv_typing(
             seq_to_asv[seq] = asv_id
             out.write(f"{asv_id}\t{cell_count}\t{seq}\n")
 
+    # write barcode summary, but with new ASV columns appended
+    # also filter out cells classified as having mixed ASVs
     write_ASV_barcode_summary(
         barcode_summary_tsv_filename, final_barcodes, \
         barcode_summary, seq_to_asv, \
@@ -312,6 +288,7 @@ def conduct_asv_typing(
 
 
 def filter_ASV(df_combined, filter_corrupted: bool = False):
+    """Filter out cells classified as having mixed ASVs, and optionally low-confidence single ASVs"""
     
     original_num_barcodes = len(df_combined)
 
@@ -338,9 +315,11 @@ def filter_ASV(df_combined, filter_corrupted: bool = False):
 def write_ASV_barcode_summary(filtered_barcode_summary_tsv_filename: str, \
     final_barcodes: List[str], barcode_summary: Dict, seq_to_asv: Dict, \
     asv_barcode_summary_tsv_filename: str, primers_file: str, filter_corrupted: bool = False):
-
-    # re-write barcode summary tsv, but now with ASV info appended
-
+    """
+    Write revised barcode summary - specifically, add new columns for per-cell ASV information, 
+    and filter cells based on their ASV status.
+    """
+    
     df_original = pd.read_csv(filtered_barcode_summary_tsv_filename, sep="\t", index_col = "Barcode")
     df_asv = pd.DataFrame(columns = ["Reads_used_for_ASV", "Raw unique_core_sequences", \
     "Dominant_raw_read_count", "Coexisting_2bp_reads", "Unauthorized_secondary_reads", \
@@ -361,6 +340,7 @@ def write_ASV_barcode_summary(filtered_barcode_summary_tsv_filename: str, \
         if i % 1000 == 0:
             print(f"Processed {i//1000},000 barcodes")
 
+    # re-arrange order of columns in barcode summary to be: MLE info | ASV info | ARG info
     mle_info_cols = ["Predicted taxonomy", "Confidence", "Contamination", "Total # of 16s reads", "Technical noise count"]
     df_original_mle_info = df_original[mle_info_cols]
     df_original_args = pd.DataFrame(df_original)
@@ -368,7 +348,7 @@ def write_ASV_barcode_summary(filtered_barcode_summary_tsv_filename: str, \
         df_original_args.drop(col, axis = 1, inplace = True)
 
     df_combined = pd.concat([df_original_mle_info, df_asv, df_original_args], axis=1)
-    filter_ASV(df_combined, filter_corrupted)
+    filter_ASV(df_combined, filter_corrupted) # filter out cells with mixed and optionally low-confidence single ASVs
 
     df_combined.to_csv(asv_barcode_summary_tsv_filename, sep = "\t", index_label = "Barcode")
 
