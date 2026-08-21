@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from taxonomy_tree import create_taxonomy_tree
 from extract_16s_reads import check_primer_match_seq
 import json
