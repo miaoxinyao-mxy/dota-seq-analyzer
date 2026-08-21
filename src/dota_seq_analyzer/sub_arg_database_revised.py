@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import pandas as pd
 import math
 from helper_functions import open_maybe_gzip, get_arg_names, get_target_modes, ensure_output_directories
