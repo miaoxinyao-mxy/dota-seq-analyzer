@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import pandas as pd
 
 def filter_barcodes_in_df(df, min_16s_reads: int = 5, max_contam: float = 0.1, min_barcodes: int = 10):
