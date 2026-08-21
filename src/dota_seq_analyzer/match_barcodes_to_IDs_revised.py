@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from collections import Counter
 from typing import List, Dict, Tuple
 import os
