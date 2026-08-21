@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import math
 import pandas as pd
 from helper_functions import get_arg_names, ensure_output_directories
