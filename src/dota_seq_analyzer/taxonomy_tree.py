@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 
 class Node:
     """Defines the Node units of the taxonomy tree"""
