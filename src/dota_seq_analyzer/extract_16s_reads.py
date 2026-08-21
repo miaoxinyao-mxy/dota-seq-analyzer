@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from typing import Optional, Tuple
 from helper_functions import open_maybe_gzip, ensure_output_directories
 import argparse
