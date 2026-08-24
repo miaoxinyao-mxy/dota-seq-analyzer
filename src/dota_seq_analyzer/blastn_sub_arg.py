@@ -32,10 +32,15 @@ def parse_sub_arg_record(line):
 def make_summary_table(
     sub_arg_seqs_list, blastn_sub_arg_tsv, query_fasta, input_fasta, db,
     final_barcode_summary_tsv, first_gene_column_num):
+    """
+    Match the final sub-gene sequences to a reference BLAST database,
+    and write all 100% identity matches, for each of these sequences, to a single TSV file.
+    """
         
     make_blast_db(input_fasta, db) # make the BLAST database
 
-    final_gene_names = get_final_gene_names(final_barcode_summary_tsv, first_gene_column_num)
+    # obtain the final list of arbitrary names of all observed sub-gene sequences, after sub-gene filtering has already been completed
+    final_gene_names = get_final_gene_names(final_barcode_summary_tsv, first_gene_column_num) 
 
     header = ["sub-ARG_name", "subject",
               "read1_start", "read1_end", "read1_percent_identity",
@@ -45,22 +50,22 @@ def make_summary_table(
     with open(sub_arg_seqs_list, 'r') as input, \
     open(blastn_sub_arg_tsv, 'w') as output:
         output.write("\t".join(header) + "\n")
-        
-        i = 0
+
+        # iterate through each observed input sub-gene sequence
         for line in input:
-            i += 1
             record = parse_sub_arg_record(line)
             if record is None:
                 continue
 
             name, f_seq, r_seq = record
-            if name in final_gene_names:
+            if name in final_gene_names: # skip over sub-gene sequences that have already been filtered out
                 rows = get_blastn_rows(name, f_seq, r_seq, query_fasta, db)
-                for row in rows:
+                for row in rows: # note that each row represents a different 100% identity match for the given sub-gene sequence
                     output.write("\t".join(row) + "\n")
 
 def get_final_gene_names(final_barcode_summary_tsv, first_gene_column_num):
-
+    """Obtain list of all final gene and sub-gene arbitrary names"""
+    
     df_summary = pd.read_csv(final_barcode_summary_tsv, sep="\t", index_col = "Barcode")
     all_col_names = df_summary.columns.to_list()
     gene_columns = all_col_names[first_gene_column_num:]
@@ -75,6 +80,7 @@ def get_final_gene_names(final_barcode_summary_tsv, first_gene_column_num):
     return final_gene_names
 
 def make_blast_db(input_fasta, db):
+    """Make the BLAST database, based on the reference FASTA"""
     make_blast_db_command = [
         "makeblastdb",
         "-in", str(input_fasta),
@@ -84,6 +90,10 @@ def make_blast_db(input_fasta, db):
     subprocess.check_output(make_blast_db_command, text=True)
 
 def get_blastn_rows(sub_arg_name, read1_seq, read2_seq, query_fasta, db):
+    """
+    Match the given sub-gene sequence to the reference BLAST database,
+    and return information for all sub-genes that had 100% identity match to both the R1 & R2 sequences.
+    """
     
     # 1. Write the two reads to a FASTA file for BLAST
     with open(query_fasta, 'w') as f:
@@ -94,7 +104,6 @@ def get_blastn_rows(sub_arg_name, read1_seq, read2_seq, query_fasta, db):
         "qseqid", "sseqid", "pident", "qstart", "qend", "qlen",
         "sstart", "send", "gapopen", "stitle",
     ]
-
     blast_command = [
         "blastn",
         "-query", str(query_fasta),
@@ -102,14 +111,7 @@ def get_blastn_rows(sub_arg_name, read1_seq, read2_seq, query_fasta, db):
         "-max_target_seqs", str(MAX_HITS),
         "-outfmt", "6 " + " ".join(blast_columns),
     ]
-
-    print(sub_arg_name)
-
     blast_output = subprocess.check_output(blast_command, text=True)
-    print("blast output:\n\n", blast_output)
-
-    with open(query_fasta, 'r') as f:
-        print("query fasta:", f.read())
 
     # 3. Read BLAST hits and keep the best hit
     hits_by_subject = {}
@@ -123,7 +125,8 @@ def get_blastn_rows(sub_arg_name, read1_seq, read2_seq, query_fasta, db):
         hits_by_subject.setdefault(subject_name, {})
         hits_by_subject[subject_name].setdefault(query_name, hit)
 
-    # 4. Full length and 100%.
+    # 4. Keep all matches that preserve the full sequence length, 
+    #    and have 100% identity match for both the R1 & R2 sequences.
     rows = []
 
     # 2026-08-10: Identify paired queries by their explicit FASTA IDs.
@@ -151,7 +154,7 @@ def get_blastn_rows(sub_arg_name, read1_seq, read2_seq, query_fasta, db):
             and int(read2["gapopen"]) == 0
         )
 
-        # only keep hits with exact matches on both fwd & rev reads
+        # only keep hits with exact matches on both R1 & R2 reads
         if not (read1_is_exact and read2_is_exact):
             continue
 
