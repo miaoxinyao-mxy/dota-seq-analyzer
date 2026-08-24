@@ -328,6 +328,7 @@ def write_ASV_barcode_summary(filtered_barcode_summary_tsv_filename: str, \
     arg_names = get_arg_names(primers_file)
     df_original[arg_names] = df_original[arg_names].astype("Int64")
 
+    # write ASV-specific columns of barcode summary
     i = 0
     for bc in final_barcodes:
         s = barcode_summary[bc]
