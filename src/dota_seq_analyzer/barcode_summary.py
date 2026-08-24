@@ -9,11 +9,14 @@ from filter_barcodes import filter_barcodes_in_df
 from helper_functions import get_arg_names, ensure_output_directories
     
 def find_arg_data(packet_list: List[Dict], num_arg_genes: int):
-
+    """Count the # of reads of each target gene, present in the given cell"""
+    
     # 2026-08-10: Allocate counts from the primer panel, not a fixed 23-gene assumption.
     # Reason: the output vector must match the columns generated from the supplied primers file.
     gene_counts = [0] * num_arg_genes
 
+    # Iterate through each packet (each representing one read) in the given cell, 
+    # so as to count the # of reads of each target gene present
     for packet in packet_list:
         gene = packet["gene"]
         # assume gene is a 1D matrix, with a length corresponding to # of different possible ARGs
@@ -34,7 +37,8 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
     alpha_prior: float = 1.0, beta_prior: float = 9.0,
     min_confidence: float = 0.95, min_noise_reads: int = 2,
     noise_cutoff_ratio: float = 0.05):
-
+    """Obtain and compile all per-cell taxonomic & target gene count data into a single 'barcode summary', and write to a TSV file"""
+        
     with open(b_with_ids_filename, 'r') as b_with_ids_file, \
     open(_16s_packet_filename, 'r') as _16s_packet_file, \
     open(arg_packet_filename, 'r') as arg_packet_file, \
@@ -45,6 +49,7 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
         _16s_packet_file_content = _16s_packet_file.readlines()
         arg_packet_file_content = arg_packet_file.readlines()
 
+        # iterate through barcodes, and obtain & compile information for each barcode
         i = 0
         for line in b_with_ids_file:
             barcode, _16s_packet_list, arg_packet_list = get_barcode_packet_lists(line, _16s_packet_file_content, arg_packet_file_content)
@@ -60,17 +65,19 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
             print(f"Processed {i} barcodes")
             i += 1
 
+        # filter barcodes, and write barcode summary to tsv
         df.to_csv(unfiltered_tsv_filename, sep = "\t", index_label = "Barcode")
-        filter_barcodes_in_df(df, min_16s_reads, max_contam)
+        filter_barcodes_in_df(df, min_16s_reads, max_contam) # filter barcodes
         df.to_csv(tsv_filename, sep = "\t", index_label = "Barcode")
 
 def find_column_names(primers_filename):
+    """Obtain list of column names for the barcode summary"""
     primer_names = get_arg_names(primers_filename)
     column_names = ["Predicted taxonomy", "Confidence", "Contamination", "Total # of 16s reads", "Technical noise count"] + primer_names
     return column_names
 
 def write_content_tsv_row(barcode: str, total_16s_reads, technical_noise_count, predicted_taxonomy, confidence, contamination, data_arg, df, i):
-
+    """Compile provided taxonomic & target gene count data, for the given barcode, and write it into a single row in the barcode summary dataframe"""
     row_16s = [predicted_taxonomy, str(confidence), str(contamination), str(total_16s_reads), str(technical_noise_count)]
     row_arg = []
     for val in data_arg:
@@ -81,9 +88,9 @@ def write_content_tsv_row(barcode: str, total_16s_reads, technical_noise_count, 
     df.loc[barcode] = full_row
 
 def extract_id_packet(wanted_id: str, packet_file_content) -> Dict:
-
+    """Extract & return the 'packet' corresponding to the desired sequencing read"""
     for line in packet_file_content:
-        if wanted_id in line:
+        if wanted_id in line: # only load the JSON packet if it contains the desired read's ID, so as to preserve system resources
             packet = json.loads(line.strip("\n"))
             assert packet["ID"] == wanted_id
             return packet
@@ -92,9 +99,10 @@ def extract_id_packet(wanted_id: str, packet_file_content) -> Dict:
     assert False, f"ID {wanted_id} could not be found in packet file"
         
 def form_packet_list(id_list: List[str], packet_file_content) -> List[Dict]:
+    """Compile a list of 'packets' corresponding to the IDs of each of the desired sequencing reads"""
     packet_list = []
     for id in id_list:
-        if id != "":
+        if id != "": # skip over empty IDs
             packet_list.append(extract_id_packet(id, packet_file_content))
     return packet_list
 
@@ -102,13 +110,15 @@ def get_barcode_packet_lists(
     b_with_ids_line: str,
     _16s_packet_file_content,
     arg_packet_file_content) -> Tuple[str, List[Dict], List[Dict]]:
-
+    """Obtain the lists of read 'packets' for the given cell's 16s reads, and target gene reads"""
+        
     # parse barcode line
     bc, ids = b_with_ids_line.strip("\n").split(": ")
     _16s_ids, arg_ids = ids.split(" | ")[0:2]
     _16s_ids = _16s_ids.split(", ")
     arg_ids = arg_ids.split(", ")
 
+    # obtain the packet lists
     _16s_packet_list = form_packet_list(_16s_ids, _16s_packet_file_content)
     arg_packet_list = form_packet_list(arg_ids, arg_packet_file_content)
 
