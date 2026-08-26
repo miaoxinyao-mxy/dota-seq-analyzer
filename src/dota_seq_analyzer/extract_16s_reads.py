@@ -5,10 +5,8 @@ import argparse
 import os
 
 def determine_16s_primers(primers_filename: str) -> Tuple[str, str]:
-    """
-    Parse through primers file
-    Return the forward & reverse 16s primers
-    """
+    """Obtain the R1 & R2 primers for the 16s gene"""
+    
     with open(primers_filename, 'r') as primers_file:
         for line in primers_file:
             line = line.strip("\n").split(",")
@@ -67,10 +65,8 @@ def bounded_edit_distance(pattern: str, text: str, max_edits: int) -> int:
     return previous[tlen]
 
 def check_primer_match_seq(
-    seq: str,
-    primer: str,
-    max_shift: int,
-    max_mm: int,
+    seq: str, primer: str,
+    max_shift: int, max_mm: int,
     centre: int = 0,
     max_indel: Optional[int] = None
 ) -> bool:
