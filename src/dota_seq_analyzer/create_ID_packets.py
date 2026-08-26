@@ -9,28 +9,15 @@ from helper_functions import open_maybe_gzip, ensure_output_directories
 
 """
 This program converts raw data from fastq and kraken files into 
-json-like objects containing the barcode, gene, and taxonomy classification
-for each read ID
-"""
-
-"""
-Process:
-1. Make taxonomy tree; save a list of all nodes on each taxonomic level (list of species nodes, list of genus nodes, etc.)
-2. Assign barcode to each ID
-3. Use primer matching to determine the gene (if applicable) for each ID
-4. Matching ID to taxonomy (only for 16s):
-    a) Determine taxonomic level
-    b) Iterate through corresponding list of nodes
-    c) Traverse up that node's tree and assign taxonomy object properties appropriately
+json-like objects containing the barcode, gene, and taxonomic classification for each read ID
 """
 
 def determine_16s_taxonomy(t_line: str, tax_nodes_lists):
-
     """
     Determines taxonomic classification of a read ID at each applicable taxonomic rank 
     (e.g. classifiable, domain, ... genus, species)
     Iterates through corresponding list of nodes for lowest identified rank, then traverses up tree
-    Returns a dictionary including either a taxonomic name (e.g. "E. Coli") or None for each taxonomic rank
+    Returns a dictionary including either a taxonomic name (e.g. "E. Coli") or "None", for each taxonomic rank
     """
 
     taxonomy = {"classifiable": None, 'R1': None, 'P': None, 'C': None, 'O': None, 'F': None, 'G': None, 'S': None}
@@ -82,17 +69,12 @@ def determine_16s_taxonomy(t_line: str, tax_nodes_lists):
             return taxonomy
         
 def set_all_tax_vals(bottom_node, taxonomy):
-    
-    """Traverses up tree, assigning all taxonomy properties appopriately"""
+    """Traverses up tree, assigning all taxonomy properties appropriately"""
 
     curr_node = bottom_node
     while curr_node.tax_name != "root":
         taxonomy[curr_node.tax_lvl_char] = curr_node.tax_name
         curr_node = curr_node.parent
-
-def create_packet(id: str, barcode: str, gene, taxonomy):
-    """Creates & formats a dictionary representing a "packet" of data for a given read ID"""
-    return {"ID": id, "barcode": barcode, "gene": gene, "taxonomy": taxonomy}
 
 def determine_gene_revised(
     primers: List[str], 
@@ -122,7 +104,7 @@ def determine_gene_revised(
         fwd_primer = parsed_primer_line[1]
         rev_primer = parsed_primer_line[2]
 
-        # if both fwd and rev primers match, then assign this read's gene accordingly
+        # if both R1 and R2 primers match, then assign this read's gene accordingly
         if check_primer_match_seq(r_seq, rev_primer, max_shift, max_mm, primer_start_num) \
         and check_primer_match_seq(f_seq, fwd_primer, max_shift, max_mm):
             
@@ -135,14 +117,21 @@ def determine_gene_revised(
     return gene
 
 def make_primers_to_genes_dict(primers):
+    """
+    Create a dictionary matching primer sequences to their corresponding gene,
+    where the gene is either "16s" or a 1D vector representing the given target gene.
+    """
     primers_to_genes = {}
 
+    # iterate through all primers
     for i in range(len(primers[1:])): # don't need to use header line
+        # parse the primer line
         primer_line = primers[i+1]
         parsed_primer_line = primer_line.strip().split(",")
         fwd_primer = parsed_primer_line[1]
         rev_primer = parsed_primer_line[2]
 
+        # determine the gene
         # 2026-08-10: Size the gene vector from the primer panel instead of 23.
         # Reason: custom primer panels must not silently produce misaligned gene columns.
         gene = [0] * max(0, len(primers) - 2)
@@ -150,12 +139,15 @@ def make_primers_to_genes_dict(primers):
             gene = "16s"
         else:
             gene[i-1] = 1
+
+        # add to the primers_to_genes dictionary
         primers_to_genes[(fwd_primer, rev_primer)] = gene
 
     return primers_to_genes
 
 def format_packet(id, barcode, gene, taxonomy):
     """Format text into JSON object style"""
+    
     tax_str = str(taxonomy).replace("True", "true").replace("False", "false").replace("None", "null").replace("'", '"')
     if isinstance(gene, str):
         gene = f'"{gene}"'
@@ -176,11 +168,13 @@ def generate_packets(
     Also write reverse fastq files, again based on type of gene; to be used in downstream processing.
     """
 
+    # preliminary steps
     tax_nodes_lists = create_taxonomy_tree(report_filename)
     with open(primers_filename, 'r') as primers_file: # csv file
         primers = primers_file.readlines()
     primers_to_genes_dict = make_primers_to_genes_dict(primers)
 
+        
     with open_maybe_gzip(fwd_fastq_filename, 'r') as fwd_file, \
     open_maybe_gzip(rev_fastq_filename, 'r') as rev_file, \
     open(kraken_output_filename, 'r') as taxonomy_file, \
@@ -196,6 +190,7 @@ def generate_packets(
         r_line = rev_file.readline()
         t_line = taxonomy_file.readline()
 
+        # iterate through all lines in the fastq files
         while (f_line != "") and (r_line != ""):
 
             # parse lines to get ID from barcode file & taxonomy file
@@ -246,7 +241,6 @@ def generate_packets(
                 out_arg_rev_fastq_file.write(f"{id_r_unparsed}\n{r_seq}\n+\n{r_quality}\n")
 
             # prepare for reading in the next read_ID line
-
             f_line = fwd_file.readline()
             r_line = rev_file.readline()
 
