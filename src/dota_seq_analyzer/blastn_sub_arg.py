@@ -10,6 +10,8 @@ MAX_HITS = 500
 # 2026-08-10: Accept the TSV emitted by sub_arg_database_revised.py.
 # Reason: the revised sub-ARG step writes name, cell count, and R1|R2 core sequence.
 def parse_sub_arg_record(line):
+    """Parse the name and R1 & R2 seqs for the given sub-ARG sequence line, from the sub_arg_seqs_list TSV file"""
+    
     line = line.strip()
     if not line or line.startswith("Sub-ARG_Arbitrary_Name"):
         return None
