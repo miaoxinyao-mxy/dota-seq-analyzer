@@ -14,14 +14,16 @@ def exp_decay(x, a, b, c):
     return a * np.exp(-b * x) + c
 
 def run_sub_arg_denoising_pipeline(filepath, alpha, output_file):
+    """
+    Filter out sub-ARGs with too few cells associated with them.
+    Return the list of final sub-ARG names (i.e. those that were not filtered out).
+    """
     
     df = pd.read_csv(filepath, sep='\t')
 
     # 2026-08-10: Remove only the generated _<...> suffix when recovering a target name.
     # Reason: primer target names may legitimately contain underscores.
     df["Family"] = df['Sub-ARG_Arbitrary_Name'].apply(lambda x: str(x).rsplit("_<", 1)[0])
-    #df['Family'] = df['Sub-ARG_Arbitrary_Name'].str.extract(r'^(.*?)_<\d+>$')
-    print(df["Family"])
     
     # 2026-08-10: Infer the optional decay-control rate internally and fall back to family-wise decay.
     # Reason: primer panels and small read subsets may not contain enough meca observations.
