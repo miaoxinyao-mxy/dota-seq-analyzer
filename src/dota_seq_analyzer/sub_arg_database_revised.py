@@ -254,7 +254,8 @@ def write_sub_arg_barcode_summary(
 def modify_sub_arg_barcode_summary(
     df_sub_arg, final_sub_arg_names, filtered_sub_arg_barcode_summary_tsv,
     genes_eligible_for_sub_args):
-
+    """Replace filtered-out sub-ARG names with their parent ARG names, in the barcode summary"""
+        
     # 2026-08-10: Apply one consistent parent-gene fallback to primer-selected genes.
     # Reason: there is no longer a user-visible or forced baseline gene.
 
@@ -262,22 +263,26 @@ def modify_sub_arg_barcode_summary(
     for arg in genes_eligible_for_sub_args:
         df_sub_arg.loc[~df_sub_arg[arg].isin(["0", f"{arg}_parent"] + final_sub_arg_names), arg] = f"{arg}_parent"
 
+    # write to TSV
     df_sub_arg.to_csv(filtered_sub_arg_barcode_summary_tsv, sep = "\t", index_label = "Barcode")
 
 
 def get_alpha_name(sub_arg_num: int) -> str:
-    "Determine alpha-based name for sub-ARG, based on the number name equivalent"
-
+    """Determine alpha-based name for sub-ARG, based on the number name equivalent"""
     # note that input sub-ARG numbers are 1-indexed, not 0-indexed
+
+    # preliminary steps
     alphabet = "abcdefghijklmnopqrstuvwxyz".upper()
     assert sub_arg_num < 26*27, \
         f"Error: there should be less than 26*27 = 702 sub-ARGs per ARG, for the arbitrary sub-ARG naming system to work"
 
+    # extra character added if number > 26 -> e.g. if TEM_<Z> was already taken, next name would be TEM_<AA>, then TEM_<AB>, etc.
     starting_char = ""
     if sub_arg_num > 26:
         starting_char = alphabet[(sub_arg_num - 1)//26 - 1]
 
-    alpha_name = starting_char + alphabet[sub_arg_num - 1]
+    # main character - this is the only character if number <= 26 (e.g. TEM_<C>), otherwise the second character if number > 26 (e.g. TEM_<AC>)
+    alpha_name = starting_char + alphabet[sub_arg_num % 26 - 1]
     return alpha_name
 
 def match_ids_to_genes_bc(
@@ -285,7 +290,7 @@ def match_ids_to_genes_bc(
     filtered_barcode_summary_tsv: str) -> Dict[str, int]:
     """
     Goal: obtain information for all ARG read IDs related to the current filtered barcode summary.
-    Create a dictionary with elements of the form "ID: gene|barcode"
+    Create a dictionary of the form {"ID": "gene_num|barcode", ...}
 
     This dictionary will contain all IDs that are both 1) ARG reads, 
      and 2) ID corresponds to one of the barcodes in the input filtered_barcode_summary_tsv 
@@ -294,14 +299,16 @@ def match_ids_to_genes_bc(
 
     This dictionary will be used in downstream processing.
     """
-    
+
+    # obtain list of all current barcodes (i.e. excludes filtered-out barcodes)
     filtered_bcs = pd.read_csv(filtered_barcode_summary_tsv, sep="\t", index_col = "Barcode").index
 
+    # compile list of all ARG reads' IDs with their corresponding barcodes, with each element being a string in the form of "ID|Barcode"
     filtered_arg_ids_with_bs = []
     with open(b_with_ids, 'r') as b_with_ids_file:
         for line in b_with_ids_file:
             bc, ids = line.strip().split(": ")
-            if bc in filtered_bcs:
+            if bc in filtered_bcs: # barcode must be in current filtered barcode list (meaning not already filtered out)
                 arg_ids_field = ids.split(" | ")[1]
                 # 2026-08-10: Detect ARG read IDs from field content instead of an instrument-specific prefix.
                 # Reason: valid FASTQ IDs do not necessarily contain "SH0", and must not be silently discarded.
@@ -313,8 +320,11 @@ def match_ids_to_genes_bc(
                 arg_ids_with_bs = [f"{read_id}|{bc}" for read_id in arg_ids]
                 filtered_arg_ids_with_bs.extend(arg_ids_with_bs)
 
+    # extract list of the IDs of all ARG reads corresponding to barcodes in the current filtered barcode list
     filtered_arg_ids = [id_with_b.split("|")[0] for id_with_b in filtered_arg_ids_with_bs]
 
+    # compile a dictionary mapping each ARG read's ID to its corresponding gene number and barcode
+    # the ids_to_genes_bc dictionary will be in the form of {"ID": "gene_num|barcode", ...}
     ids_to_genes_bc = {}
     with open(arg_packets, 'r') as arg_packet_file:
         for line in arg_packet_file:
