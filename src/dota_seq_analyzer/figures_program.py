@@ -394,13 +394,9 @@ def get_num_reads_for_all_barcodes(b_with_ids: str):
             _16s_reads, arg_reads, unclassified_reads = line.strip().split(": ")[1].split(" |")
             all_reads = _16s_reads.split(", ") + arg_reads.split(", ") + unclassified_reads.split(", ")
             
-            # remove empty elements (these are not reads)
-            for _ in range(all_reads.count("")):
-                all_reads.remove("")
-            for _ in range(all_reads.count(" ")):
-                all_reads.remove(" ")
-            for _ in range(all_reads.count("  ")):
-                all_reads.remove("  ")
+            # 2026-08-27: Normalize and remove empty read IDs in one pass.
+            # Reason: the previous exact-string removals missed tabs and other whitespace-only IDs.
+            all_reads = [read_id.strip() for read_id in all_reads if read_id.strip()]
            
             num_reads_for_barcodes.append(len(all_reads))
 

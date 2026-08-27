@@ -87,13 +87,9 @@ def read_b_with_ids(b_with_ids_filename: str) -> Dict[str, List[str]]:
             bc, ids = line.strip("\n").split(": ")
             _16s_ids = ids.split(" | ")[0].split(", ")
 
-            # remove empty IDs
-            for _ in range(_16s_ids.count("")):
-                _16s_ids.remove("")
-            for _ in range(_16s_ids.count(" ")):
-                _16s_ids.remove(" ")
-            for _ in range(_16s_ids.count("  ")):
-                _16s_ids.remove("  ")
+            # 2026-08-27: Normalize and remove empty read IDs in one pass.
+            # Reason: the previous exact-string removals missed tabs and other whitespace-only IDs.
+            _16s_ids = [read_id.strip() for read_id in _16s_ids if read_id.strip()]
 
             # add to bc_to_ids dict
             bc_to_ids[bc] = _16s_ids
