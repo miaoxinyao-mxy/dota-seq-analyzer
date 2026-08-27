@@ -39,7 +39,9 @@ def filter_args(
     Hence nullify these low ARG read count values in the barcode summary.
     Use an algorithm based on the Poisson distribution to determine whether or not a given read count is sufficient,
      based on both the specific cell and the specific ARG (this entails a bidirectional normalization).
-    """"
+    # 2026-08-27: Fix the function docstring terminator.
+    # Reason: the extra quote caused a SyntaxError before the filtering stage could run.
+    """
 
     # Note that alpha is the family-wise error rate / significance threshold
     # This controls false positives per cell
