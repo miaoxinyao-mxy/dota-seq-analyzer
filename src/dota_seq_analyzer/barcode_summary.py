@@ -45,7 +45,9 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
     open(primers_filename, 'r') as primers_file: # csv file
 
         print("Writing to files") # status update to user
-        df = pd.DataFrame(columns = find_column_names(primers_filename))
+        # 2026-08-27: collect rows in a dictionary and build the DataFrame once.
+        # Reason: assigning one row at a time with df.loc caused quadratic runtime.
+        rows = {}
         _16s_packet_file_content = _16s_packet_file.readlines()
         arg_packet_file_content = arg_packet_file.readlines()
 
@@ -60,11 +62,12 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
             # 2026-08-10: Pass the primer-derived ARG count into the summary writer.
             # Reason: empty ARG barcodes still need a row with the correct number of columns.
             data_arg = find_arg_data(arg_packet_list, len(get_arg_names(primers_filename)))
-            write_content_tsv_row(barcode, total_16s_reads, technical_noise_count, predicted_taxonomy, confidence, contamination, data_arg, df, i) # content rows
+            write_content_tsv_row(barcode, total_16s_reads, technical_noise_count, predicted_taxonomy, confidence, contamination, data_arg, rows, i) # content rows
 
             print(f"Processed {i} barcodes")
             i += 1
 
+        df = pd.DataFrame.from_dict(rows, orient="index", columns=find_column_names(primers_filename))
         # filter barcodes, and write barcode summary to tsv
         df.to_csv(unfiltered_tsv_filename, sep = "\t", index_label = "Barcode")
         filter_barcodes_in_df(df, min_16s_reads, max_contam) # filter barcodes
@@ -76,7 +79,7 @@ def find_column_names(primers_filename):
     column_names = ["Predicted taxonomy", "Confidence", "Contamination", "Total # of 16s reads", "Technical noise count"] + primer_names
     return column_names
 
-def write_content_tsv_row(barcode: str, total_16s_reads, technical_noise_count, predicted_taxonomy, confidence, contamination, data_arg, df, i):
+def write_content_tsv_row(barcode: str, total_16s_reads, technical_noise_count, predicted_taxonomy, confidence, contamination, data_arg, rows, i):
     """Compile provided taxonomic & target gene count data, for the given barcode, and write it into a single row in the barcode summary dataframe"""
     row_16s = [predicted_taxonomy, str(confidence), str(contamination), str(total_16s_reads), str(technical_noise_count)]
     row_arg = []
@@ -85,7 +88,7 @@ def write_content_tsv_row(barcode: str, total_16s_reads, technical_noise_count, 
 
     full_row = row_16s + row_arg
 
-    df.loc[barcode] = full_row
+    rows[barcode] = full_row
 
 def extract_id_packet(wanted_id: str, packet_file_content) -> Dict:
     """Extract & return the 'packet' corresponding to the desired sequencing read"""
