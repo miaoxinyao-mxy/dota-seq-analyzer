@@ -50,11 +50,15 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
         rows = {}
         _16s_packet_file_content = _16s_packet_file.readlines()
         arg_packet_file_content = arg_packet_file.readlines()
+        # 2026-08-27: index packets once so each barcode lookup is constant-time.
+        # Reason: rescanning every packet file for every read caused quadratic runtime.
+        _16s_packet_index = build_packet_index(_16s_packet_file_content)
+        arg_packet_index = build_packet_index(arg_packet_file_content)
 
         # iterate through barcodes, and obtain & compile information for each barcode
         i = 0
         for line in b_with_ids_file:
-            barcode, _16s_packet_list, arg_packet_list = get_barcode_packet_lists(line, _16s_packet_file_content, arg_packet_file_content)
+            barcode, _16s_packet_list, arg_packet_list = get_barcode_packet_lists(line, _16s_packet_index, arg_packet_index)
             total_16s_reads, technical_noise_count, predicted_taxonomy, confidence, contamination \
             = parse_and_analyze_perfect_corrected_revised(_16s_packet_list, 
                 p_match, p_none, p_error, alpha_prior, beta_prior,
@@ -90,29 +94,28 @@ def write_content_tsv_row(barcode: str, total_16s_reads, technical_noise_count, 
 
     rows[barcode] = full_row
 
-def extract_id_packet(wanted_id: str, packet_file_content) -> Dict:
-    """Extract & return the 'packet' corresponding to the desired sequencing read"""
-    for line in packet_file_content:
-        if wanted_id in line: # only load the JSON packet if it contains the desired read's ID, so as to preserve system resources
-            packet = json.loads(line.strip("\n"))
-            assert packet["ID"] == wanted_id
-            return packet
-                
-    # packet should have been found and returned; if not, give assertion error
-    assert False, f"ID {wanted_id} could not be found in packet file"
+def build_packet_index(packet_file_content) -> Dict:
+    """Build a lookup table from read ID to packet."""
+    return {packet["ID"]: packet for packet in (json.loads(line) for line in packet_file_content)}
+
+def extract_id_packet(wanted_id: str, packet_index: Dict) -> Dict:
+    """Return the packet for a read ID from a pre-built index."""
+    if wanted_id not in packet_index:
+        raise KeyError(f"ID {wanted_id} could not be found in packet file")
+    return packet_index[wanted_id]
         
-def form_packet_list(id_list: List[str], packet_file_content) -> List[Dict]:
+def form_packet_list(id_list: List[str], packet_index) -> List[Dict]:
     """Compile a list of 'packets' corresponding to the IDs of each of the desired sequencing reads"""
     packet_list = []
     for id in id_list:
         if id != "": # skip over empty IDs
-            packet_list.append(extract_id_packet(id, packet_file_content))
+            packet_list.append(extract_id_packet(id, packet_index))
     return packet_list
 
 def get_barcode_packet_lists(
     b_with_ids_line: str,
-    _16s_packet_file_content,
-    arg_packet_file_content) -> Tuple[str, List[Dict], List[Dict]]:
+    _16s_packet_index,
+    arg_packet_index) -> Tuple[str, List[Dict], List[Dict]]:
     """Obtain the lists of read 'packets' for the given cell's 16s reads, and target gene reads"""
         
     # parse barcode line
@@ -122,8 +125,8 @@ def get_barcode_packet_lists(
     arg_ids = arg_ids.split(", ")
 
     # obtain the packet lists
-    _16s_packet_list = form_packet_list(_16s_ids, _16s_packet_file_content)
-    arg_packet_list = form_packet_list(arg_ids, arg_packet_file_content)
+    _16s_packet_list = form_packet_list(_16s_ids, _16s_packet_index)
+    arg_packet_list = form_packet_list(arg_ids, arg_packet_index)
 
     return bc, _16s_packet_list, arg_packet_list
 
