@@ -23,13 +23,14 @@ def make_figures(
     asv_arg_figure: str, barcode_group_size_figure: str, primer_balance_figure: str,
     first_gene_column_num: int, global_mle_tax_tsv: str, global_asv_tsv: str = None,
     arg_threshold: float = 0.01, min_cells_per_asv: int = 30, figure_dpi: int = 300):
-
+    """Main method for making all 3 output figures"""
+        
     use_asvs = determine_use_asvs(use_asvs_str) # convert use_asvs from yes/no into a bool True/False value
 
     # 0) Non-figure related: write global taxonomic classifications file
     write_global_tax_classification_file(final_asv_barcode_summary_tsv, global_mle_tax_tsv)
 
-    # 1) ASV-ARG Table
+    # 1) ASV-ARG Heat Map
     make_asv_arg_table(asv_arg_figure, final_asv_barcode_summary_tsv, asv_arg_table_tsv, 
         min_cells_per_asv, arg_threshold, figure_dpi, first_gene_column_num, 
         use_asvs, global_mle_tax_tsv, global_asv_tsv)
@@ -43,7 +44,7 @@ def make_figures(
 
 # ===============================================================================================
 
-# Core functions for making figures
+# Core functions for making the individual figures
 
 def make_asv_arg_table(
     asv_arg_figure: str, final_asv_barcode_summary_tsv: str, asv_arg_table_tsv: str, 
@@ -53,6 +54,8 @@ def make_asv_arg_table(
     Figure: Heat map of ASVs with ARGs
     Purpose: determine which ARGs each "species" has (where each "species" is identified with its ASV)
     """
+
+    # create the ASV-ARG quantitative table
     # 2026-08-10: Present the existing ASV association plot as a generic target plot.
     # Reason: target panels may contain AMR, marker genes, or phase-variation loci.
     df_asv_arg, final_gene_names = create_asv_arg_matrix(
@@ -60,8 +63,9 @@ def make_asv_arg_table(
         asv_arg_table_tsv, min_cells_per_asv, first_gene_column_num, 
         global_mle_tax_tsv, global_asv_tsv)
 
+    # determine y-axis labels & ticks, based on whether or not ASVs are being used
     if use_asvs:
-        y_axis_label = "ASV"
+        y_axis_label = "ASV Taxonomic Classification"
         # set labels equal to list of asv names, with taxonomic classifications added to each asv label
         asv_or_tax_labels = []
         for idx in df_asv_arg.index.to_list():
@@ -87,12 +91,12 @@ def make_asv_arg_table(
                     most_specific_tax = tax_lvl
             asv_or_tax_labels.append(most_specific_tax)
 
-    # adjust length of long arg name to better fit the x axis
+    # adjust length of long ARG name to better fit the x axis
     for i in range(len(final_gene_names)):
         if final_gene_names[i] == "OXA-48 like (oxa-3)":
             final_gene_names[i] = "OXA-48 like\n(oxa-3)"
 
-    # edit the ASV-ARG table - nullify values below arg threshold
+    # edit the ASV-ARG table - nullify values below ARG threshold
     df_asv_arg.mask(df_asv_arg < arg_threshold, 0, inplace = True)
 
     # 2026-08-10: Produce an explanatory figure when no heatmap values remain.
@@ -111,7 +115,7 @@ def make_asv_arg_table(
         plt.close(fig)
         return
 
-    # plot the ASV-ARG table
+    # plot the ASV-ARG table as a heat map
     axs = plt.matshow(df_asv_arg.to_numpy(), norm=colors.LogNorm(), cmap = "Blues").axes
     axs.set_xlabel("Target", fontweight = "bold", fontsize = 11)
     axs.xaxis.tick_bottom()
@@ -126,11 +130,12 @@ def make_asv_arg_table(
 def make_barcode_group_size_figure(
     barcode_group_size_figure, unfiltered_barcode_summary_tsv, 
     primers_file, b_with_ids, figure_dpi):
-    # Figure: barcode group size; i.e. # of reads for barcodes
-    # Purpose: filtering; determine threshold min # of reads to use when filtering out barcodes, 
-    # such that most of the dataset's reads are still preserved
-    # Adapted code from original dota-seq paper
-
+    """
+    Figure: barcode group size; i.e. # of reads for barcodes
+    Purpose: filtering; determine threshold min # of reads to use when filtering out barcodes, 
+     such that most of the dataset's reads are still preserved
+    Adapted code from original dota-seq paper
+    """
 
     # obtain list of sizes of all barcode groups (i.e. # of reads per barcode)
     # there will be three graphs: 1) only 16s reads, 2) all classified reads (16s + ARG), 3) all reads (16s + ARG + unclassified)
@@ -154,15 +159,18 @@ def make_barcode_group_size_figure(
 
 def make_primer_balance_figure(
     primer_balance_figure, asv_barcode_summary_no_sub_args_tsv, primers_file, figure_dpi):
-    # Figure: ARG vs 16s primer balance
-    # Purpose: determine if the ratio of ARG to 16s primers needs to be adjusted, for any of the ARGs
-    # Adapted code from original dota-seq paper
-
+    """
+    Figure: ARG vs 16s primer balance
+    Purpose: determine if the ratio of ARG to 16s primers needs to be adjusted, for any of the ARGs
+    Adapted code from original dota-seq paper
+    """
+    # colour palette for graphs
     c_palette = ["#EE7032", "#FC8609", "#F5A232", "#F7DD48", "#C4E54C","#8CC860",
             "#6CC860", "#5ACCAA", "#52CECE", "#4DAEEE", "#5877D6", "#C186F1", "#D441D6"]
 
+    # obtain the list of different primer balance ratios, for each ARG that has a non-zero number of cells associated with it
     # ratio calculation: (# of ARG#1 reads) / (# of ARG#1 reads + # of 16s reads)  
-    # (where "ARG#1" represents whichever of the 23 ARGs you're currently looking at)
+    # (where "ARG#1" represents whichever of the ARGs you're currently looking at)
     # note that this ratio calculation is done only for the barcodes that are classified as having that specific ARG
     arg_ratios = get_ARG_to_16s_ratios(asv_barcode_summary_no_sub_args_tsv, primers_file)
 
@@ -210,6 +218,7 @@ def write_global_tax_classification_file(
 
 # Determine whether or not to use ASVs -> convert yes/no into True/False
 def determine_use_asvs(use_asvs_str: str):
+    """Convert yes/no input for using ASVs into boolean True/False"""
     assert use_asvs_str in ["yes", "no"]
     if use_asvs_str == "yes":
         return True
@@ -223,6 +232,7 @@ def determine_use_asvs(use_asvs_str: str):
 def get_asv_names(
     global_asv_file: str, min_cells_per_asv: int = 10) -> List[str]:
     """Extract the names of all ASVs that have the desired minimum # of cells associated with them"""
+        
     asv_names = []
     with open(global_asv_file, 'r') as f:
         line = f.readline() # header row
@@ -241,6 +251,7 @@ def get_asv_names(
 def get_tax_names(
     global_mle_tax_tsv: str, min_cells_per_tax_classification: int) -> List[str]:
     """Extract all taxonomic classifications that have the desired minimum # of cells associated with them"""
+        
     tax_names = []
     with open(global_mle_tax_tsv, 'r') as f:
         line = f.readline() # header row
@@ -316,6 +327,7 @@ def create_asv_arg_matrix(
     Note that this is called "asv-arg matrix", but it can be used without ASVs as well;
     in that case, MLE taxonomic classifications would be used as a replacement for ASVs.
     """
+        
     if use_asvs:
         asv_names = get_asv_names(global_asv_file, min_cells_per_asv_or_tax)
         df_asv_arg, final_gene_names = summarize_ASV_with_ARG(filtered_counts_summary_tsv, 
@@ -336,18 +348,18 @@ def create_asv_arg_matrix(
 # Helper functions for Barcode Group Size Figure
 
 def jackpottocurve(fig, ax, barsize, type_of_reads, vline):
-    #jackpottocurve is a cumulative histogram of the read groups based on how many reads are in the group
+    # jackpottocurve is a cumulative histogram of the read groups based on how many reads are in the group
 
-    #prepare data to plot the jackpottocurve
-    X = np.array(barsize) #make an np array of the data so we can use the various np functions
+    # prepare data to plot the jackpottocurve
+    X = np.array(barsize) # make an np array of the data so we can use the various np functions
     X.sort()
-    X_lorenz = X.cumsum() / X.sum() #turns it into a cumsum percentage (for y-axis)
-    X_lorenz = np.insert(X_lorenz, 0, 0) #insert the 0,0 point
-    X = np.insert(X, 0, 0) #insert 0,0 point for X as well
+    X_lorenz = X.cumsum() / X.sum() # turns it into a cumsum percentage (for y-axis)
+    X_lorenz = np.insert(X_lorenz, 0, 0) # insert the 0,0 point
+    X = np.insert(X, 0, 0) # insert 0,0 point for X as well
 
     # scatter plot of the jackpottocurve (modification of the lorenz curve)
     ax.scatter(X, X_lorenz, 
-                marker='o', color='indigo', s=100) #x axis is cumulative barcode number, yaxis is cumulative total # reads
+                marker='o', color='indigo', s=100) # x axis is cumulative barcode number, yaxis is cumulative total # reads
     ax.set_title(f"{type_of_reads} Reads")
     ax.set_xlim((1,max(barsize)))
     ax.set_xscale("log", base=10)
@@ -357,12 +369,14 @@ def jackpottocurve(fig, ax, barsize, type_of_reads, vline):
     return
 
 def get_num_16s_reads_for_barcodes(unfiltered_barcode_summary_tsv: str):
-    # only 16s reads
+    """only 16s reads: obtain list of sizes of all barcode groups (i.e. # of 16s reads per barcode)"""
+    
     df = pd.read_csv(unfiltered_barcode_summary_tsv, sep="\t", index_col = "Barcode")
     return df["Total # of 16s reads"]
 
 def get_num_reads_for_classified_barcodes(unfiltered_barcode_summary_tsv: str, primers_file: str):
-    # 16s and arg reads, but not unclassified reads
+    """16s and arg reads, but not unclassified reads: obtain list of sizes of all barcode groups (i.e. # of classified reads per barcode)"""
+    
     cols_to_use = ["Total # of 16s reads"] + get_arg_names(primers_file)
     df = pd.read_csv(unfiltered_barcode_summary_tsv, sep="\t", index_col = "Barcode")
     # remove unwanted columns
@@ -372,7 +386,8 @@ def get_num_reads_for_classified_barcodes(unfiltered_barcode_summary_tsv: str, p
     return df.sum(axis = 1)
 
 def get_num_reads_for_all_barcodes(b_with_ids: str):
-    # all reads: 16s, arg, & unclassified
+    """all reads - 16s, arg, & unclassified: obtain list of sizes of all barcode groups (i.e. # of total reads per barcode)"""
+    
     num_reads_for_barcodes = []
     with open(b_with_ids, 'r') as f:
         for line in f:
