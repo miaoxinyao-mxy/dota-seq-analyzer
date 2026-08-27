@@ -125,7 +125,9 @@ def make_asv_arg_table(
     axs.set_title("Targets Present in the Most Common Taxonomic Classifications", fontweight = "bold", fontsize = 15, pad = 30)
     plt.colorbar()
     plt.savefig(asv_arg_figure, bbox_inches = "tight", pad_inches = 0.3, dpi = figure_dpi)
-    plt.show()
+    plt.close()
+    # 2026-08-27: Do not open an interactive plotting window in the pipeline.
+    # Reason: figures are already written with savefig, and headless runs must not block.
 
 def make_barcode_group_size_figure(
     barcode_group_size_figure, unfiltered_barcode_summary_tsv, 
