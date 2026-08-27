@@ -105,11 +105,14 @@ def read_16s_revised(fwd_16s_fastq: str, rev_16s_fastq: str) -> Dict[str, List[s
         # reading in and parsing fastq files
         f_line = fwd_file.readline()
         r_line = rev_file.readline()
+        # 2026-08-27: Track the current FASTQ record for mismatch diagnostics.
+        # Reason: the previous error message referenced undefined variable i.
+        line_num = 1
 
         while (f_line != "") and (r_line != ""):
             id_f = f_line.strip().split(" ")[0].strip("@")
             id_r = r_line.strip().split(" ")[0].strip("@")
-            assert id_f == id_r, f"ID from forward and reverse fastq files do not match on line {i*4 + 1}"
+            assert id_f == id_r, f"R1/R2 read ID mismatch near FASTQ line {line_num}"
             f_seq = fwd_file.readline().strip()
             r_seq = rev_file.readline().strip()
             
@@ -120,6 +123,7 @@ def read_16s_revised(fwd_16s_fastq: str, rev_16s_fastq: str) -> Dict[str, List[s
             for _ in range(3):
                 f_line = fwd_file.readline()
                 r_line = rev_file.readline()
+            line_num += 4
 
     return _16s_reads
     
