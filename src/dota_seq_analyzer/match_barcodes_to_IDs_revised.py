@@ -77,7 +77,7 @@ def create_clustered_b_with_ids(
     sorted_bcs = [k for k, v in bcs_with_counts.most_common()] # sort barcodes by bargroup size
     clustered_b_with_ids = {} # same as all_b_with_ids, except that keys will only be dominant barcodes (not all extracted barcodes)
 
-    # Iterate through all barcodes, where this barcode list has been sorted by bargroup size (i.e. from barcodes with the most # of reads, to least # of reads)
+    # Iterate through all barcodes, where this barcode list has been sorted by bargroup size (i.e. from barcodes with the most # of reads, to least # of reads).
     # Reason: Dominant barcodes are identified as we go through this list - hence more dominant barcodes will be identified near the start of the list.
     #         Note that the dominant barcodes are the sequences representing their respective barcode clusters.
     #         We want the dominant barcodes to be the most common sequence in their respective clusters - combined with the fact that more dominant barcodes
@@ -111,11 +111,12 @@ def create_clustered_b_with_ids(
 def check_barcodes_match_revised(barcode1: str, barcode2: str, max_shift: int = 1) -> bool:
     """
     Checks if two barcodes match, given a max shift.
-    Barcodes may be shifed by the max_shift (e.g. 1), but cannot have any mismatches, nor any internal shifts (gaps)
-    Returns true if barcodes match
+    Barcodes may be shifed by the max_shift (e.g. 1), but cannot have any mismatches, nor any internal shifts (gaps).
+    Returns true if barcodes match; otherwise, returns false.
     """
+    # iterate through each possible shift value
     for shift in range(-1*max_shift, 1):
-        shift *= -1 # shift is in a negative range, and then convered back to positive
+        shift *= -1 # shift is in a negative range, and then converted back to positive
                     # reason: process non-zero shift condition (e.g. shift=1) before looking for exact match
                     # due to nature of this function's use
         len_to_check = len(barcode1) - shift  # assume barcodes 1 & 2 have same length
@@ -126,9 +127,12 @@ def check_barcodes_match_revised(barcode1: str, barcode2: str, max_shift: int = 
     return False
 
 def format_list_to_str(list_: List) -> str:
+    """Format a list as a string - namely, remove the square brackets [], and the single quotation marks"""
     return str(list_).replace("[", "").replace("]", "").replace("'", "")
 
 def write_b_with_ids_to_file(clustered_b_with_ids: Dict, b_with_ids_filename: str):
+    """Write each barcode with its corresponding IDs (organized by 16s vs ARG vs unclassified gene type), one per line, to a text file"""
+    
     print("Writing barcodes with IDs to file...")
 
     with open(b_with_ids_filename, 'w') as f:
