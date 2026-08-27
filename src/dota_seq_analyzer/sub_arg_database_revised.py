@@ -324,16 +324,17 @@ def match_ids_to_genes_bc(
     filtered_arg_ids = [id_with_b.split("|")[0] for id_with_b in filtered_arg_ids_with_bs]
 
     # compile a dictionary mapping each ARG read's ID to its corresponding gene number and barcode
-    # the ids_to_genes_bc dictionary will be in the form of {"ID": "gene_num|barcode", ...}
+    # this ids_to_genes_bc dictionary will be in the form of {"ID": "gene_num|barcode", ...}
     ids_to_genes_bc = {}
     with open(arg_packets, 'r') as arg_packet_file:
+        # iterate through each ARG read packet
         for line in arg_packet_file:
             packet = json.loads(line.strip())
-            id = packet["ID"]
-            if id in filtered_arg_ids:
-                bc = filtered_arg_ids_with_bs[filtered_arg_ids.index(id)].split("|")[1]
-                gene_num = packet["gene"].index(1)
-                ids_to_genes_bc[id] = f"{gene_num}|{bc}"
+            id = packet["ID"] # get ID
+            if id in filtered_arg_ids: # only use IDs that are in our filtered IDs list
+                bc = filtered_arg_ids_with_bs[filtered_arg_ids.index(id)].split("|")[1] # get barcode
+                gene_num = packet["gene"].index(1) # get gene number
+                ids_to_genes_bc[id] = f"{gene_num}|{bc}" # add to the dictionary
     return ids_to_genes_bc
 
 def get_all_sub_arg_seqs(
@@ -366,11 +367,12 @@ def get_all_sub_arg_seqs(
         f_line = fwd.readline()
         r_line = rev.readline()
 
+        # iterate through each read line in the fastq files
         i = 0
         while (f_line != "") and (r_line != ""):
 
             # parsing
-
+            
             id_f = f_line.strip().split(" ")[0].strip("@")
             id_r = r_line.strip().split(" ")[0].strip("@")
             # check that IDs for this line are equal - necessary for this analysis
@@ -382,8 +384,11 @@ def get_all_sub_arg_seqs(
                 f_line = fwd.readline()
                 r_line = rev.readline()
 
+            # if ID is in the filtered ARG IDs list (and thus in the ids_to_genes dictionary),
+            # then obtain its gene and barcode info
             gene_num_and_bc = ids_to_genes.get(id_f)
             if gene_num_and_bc != None:
+                # parsing
                 gene_num, bc = gene_num_and_bc.split("|")
                 gene_num = int(gene_num)
 
@@ -392,6 +397,8 @@ def get_all_sub_arg_seqs(
                     i += 1 # ensure counter still increments, before "continue" keyword
                     continue
 
+                # obtain core of the R1 & R2 sequences for this read
+                # then add this to the appropriate position in the sub_arg_seqs dictionary
                 seq_pair = extract_core(f_seq, r_seq)
                 if seq_pair in sub_arg_seqs[gene_num].keys():
                     sub_arg_seqs[gene_num][seq_pair].append(f"{id_f}|{bc}")
@@ -406,34 +413,52 @@ def cluster_sub_arg_seqs(
     max_mm_sub_arg: int, max_shift_sub_arg: int) -> List[Dict]:
     """
     Cluster the sub-ARG sequences, to create a whitelist of sub-ARG sequences for each ARG.
-    Sub-ARG sequences are clustered based on the given max mismatch (should be zero) and max shift.
-    Returns the modified sub_arg_seqs list (now called clustered_sub_arg_seqs)
+    Sub-ARG sequences are clustered based on the given max mismatch (should be zero) and max shift,
+     along with the fact that the cluster boundary should be maintained.
+    Returns the modified sub_arg_seqs list (now called clustered_sub_arg_seqs).
     """
 
     clustered_sub_arg_seqs = [{} for _ in range(len(arg_names))]
+
+    # iterate through each ARG
     for gene_num in range(len(sub_arg_seqs)):
 
         # skip over ARGs that are not eligible to have sub-ARGs
         if gene_num not in nums_genes_eligible_for_sub_args:
             continue
 
+        # count the number of reads associated with each distinct sub-ARG sequence
+        # then sort sub-ARG sequences from most to least common
         counts = {}
         for seq, ids in sub_arg_seqs[gene_num].items():
             counts[seq] = len(ids)
         sorted_sub_seqs = [k for k, v in Counter(counts).most_common()]
 
+        # Iterate through sub-ARG sequences, from most to least common.
+        # Reason: Dominant sequences are identified as we go through this list - hence more dominant sequences will be identified near the start of the list.
+        #         Note that the dominant sequences are those representing their respective sub-ARG clusters.
+        #         We want the dominant sequences to be the most common sequence in their respective clusters - 
+        #         combined with the fact that more dominant sequences will be identified near the list's beginning, 
+        #         this is why we must sort the sub-ARG sequence list by size (i.e. # of associated reads) before iterating through it.
         for seq_s in sorted_sub_seqs:
             in_dominant_seqs = False
-            for seq_d in clustered_sub_arg_seqs[gene_num]: # iterate through all dominant sub-ARG sequences identified so far for that ARG
-                d = semi_global_distance(seq_s, seq_d, max_shift=max_shift_sub_arg)
+            # iterate through all dominant sub-ARG sequences identified so far for that ARG
+            for seq_d in clustered_sub_arg_seqs[gene_num]: 
+                d = semi_global_distance(seq_s, seq_d, max_shift=max_shift_sub_arg) # calculate distance between current sequence and given dominant sequence
+                # if current sequence can be clustered with one of the dominant sequences, then merge their read ID lists
                 if d <= max_mm_sub_arg and within_cluster_boundary(clustered_sub_arg_seqs[gene_num], seq_s, max_mm_sub_arg, max_shift_sub_arg):
                     in_dominant_seqs = True
-                    clustered_sub_arg_seqs[gene_num][seq_d].extend(sub_arg_seqs[gene_num][seq_s]) 
+                    clustered_sub_arg_seqs[gene_num][seq_d].extend(sub_arg_seqs[gene_num][seq_s]) # merge the read ID lists for that cluster
                     seq_added = True
                     break # similar sequence already in dominant sequences list
+                    
+            # if current sequence cannot be clustered with any dominant sequence, 
+            # then add it to clustered_sub_arg_seqs as a new dominant sequence
             if not in_dominant_seqs:
                 clustered_sub_arg_seqs[gene_num][seq_s] = sub_arg_seqs[gene_num][seq_s]
                 seq_added = True
+
+            # sequence should have been added to clustered_sub_arg_seqs already; if not, return error
             assert seq_added == True, f"Sequence {seq_s} not matched to any sequence in the dominant sequences whitelist for ARG # {gene_num}"
 
     return clustered_sub_arg_seqs
@@ -447,18 +472,27 @@ def extract_core(
 
 def merge_into_one_dict(
     clustered_sub_arg_seqs: List[Dict]) -> Dict:
-    
+    """
+    Merge all sub-ARG sequences (across all ARGs) into a single dictionary, to make it easier to organize info 
+     on a per-barcode basis later on, thus faciliating downstream per-barcode analysis.
+    To ensure we can still identify the parent ARG for each sub-ARG sequence, append the gene number to the end of each sequence. 
+    Return this single merged dictionary.
+    """
+
+    # preliminary steps
     sub_arg_seqs_1_dict = {}
     total_num_sub_arg_seqs = 0
 
+    # iterate through each ARG (note that i is the gene number)
     for i in range(len(clustered_sub_arg_seqs)):
-        
-        # note that i is the gene number
         new_one_arg_dict = {}
-
+        # add each sequence with its corresponding IDs to the new dictionary
+        # also append the gene number to the end of each sequence, so that the gene can be identified, 
+        # even when all sub-ARG sequences (across all ARGs) are compiled into the same dictionary
         for seq, ids in clustered_sub_arg_seqs[i].items():
             new_one_arg_dict[f"{seq}_{i}"] = ids
 
+        # add all elements from the temporary dictionary for this gene into the single final dictionary
         sub_arg_seqs_1_dict.update(new_one_arg_dict)
         total_num_sub_arg_seqs += len(new_one_arg_dict)        
 
@@ -469,12 +503,22 @@ def merge_into_one_dict(
 
 def sort_sub_args_by_barcode(
     df_arg, sub_arg_seqs_1_dict: Dict) -> Dict:
-
+    """
+    Organize sub-ARG sequence information on a per-barcode basis.
+    This will make it easier later on to compile the sub-ARG barcode summary (which uses a per-barcode basis as well).
+    Return a dictionary containing this sub-ARG sequence info, sorted by barcode.
+    """
+    # set up a dictionary, with the keys being all the current filtered barcodes
     filtered_bcs = df_arg.index
     sub_arg_seqs_by_barcode = dict.fromkeys(filtered_bcs)
     for bc in sub_arg_seqs_by_barcode:
         sub_arg_seqs_by_barcode[bc] = {}
 
+    # organize info on a per-barcode basis
+    # the sub_arg_seqs_by_barcode dictionary should be in the form of 
+    # {barcode1: {seq1: 5, seq2: 1, ...}, 
+    #  barcode2: {seq3: 4, ...}, ...}
+    # where the numbers corresponding to each sequence are the # of reads associated with that sequence
     for seq, ids_with_bs in sub_arg_seqs_1_dict.items():
         for id_and_b in ids_with_bs:
             bc = id_and_b.split("|")[1]
@@ -562,18 +606,22 @@ def sub_arg_parse_and_analyze_perfect_corrected(
     noise_cutoff_ratio = 0.05
 ):
     """
-    Infer one corrected taxonomy path and contamination estimate per barcode.
+    Determine whether to classify to the parent ARG or sub-ARG level (and for the latter, determine the consensus sub-ARG).
+    Input is the list of all observed sub-ARG sequences with their respective counts, for the given ARG in the given cell.
+    Return either the sequence of the consensus sub-ARG; or, if only classified to the ARG level, return None.
+    Also return supplementary information (e.g. contamination level).
 
     The algorithm works in three broad stages:
-    1. Use maximum likelihood to choose the dominant taxon at each rank.
-    2. Stop going deeper when the best rank assignment is not confident enough.
-    3. Treat small off-path taxa as technical noise and larger off-path taxa as
+    1. Use maximum likelihood to choose the dominant sub-ARG sequence.
+    2. Only go to sub-ARG rank level if the best sub-ARG assignment has sufficient confidence; 
+       otherwise, revert to parent ARG rank level.
+    3. Treat small off-path sub-ARGs as technical noise and larger off-path sub-ARGs as
        real contamination before computing a Bayesian contamination estimate.
     """
 
     total_reads = sum(read_counts.values())
 
-    # ---------------- 1. Stepwise adaptive MLE taxonomy path inference ----------------
+    # ---------------- 1. Stepwise adaptive MLE sub-ARG path inference ----------------
     final_path = ""
     last_valid_confidence = 1.0
 
@@ -608,7 +656,7 @@ def sub_arg_parse_and_analyze_perfect_corrected(
     best_cand = max(mle_scores, key=mle_scores.get)
     confidence = exp_scores[best_cand] / sum_exp
 
-    # If confidence is high enough, accept sub-ARG rank with the best candidate sub-ARG.
+    # If confidence is high enough, accept sub-ARG rank with the best candidate sub-ARG sequence.
     # If not, then accept ARG rank (don't move deeper to sub-ARG rank).
     if confidence >= min_confidence:
         final_path = best_cand
@@ -622,6 +670,8 @@ def sub_arg_parse_and_analyze_perfect_corrected(
     technical_noise_count = "-"
     bayesian_contamination_mean = "-"
 
+    # only calculate contamination level if classified to the sub-ARG rank level
+    # reason: if classified to ARG rank level, there should be 100% confidence and no contamination
     if final_path is not None:
 
         match_reads_count = 0
