@@ -6,6 +6,12 @@ import argparse
 import os
 
 def find_poisson_survival_probability(k, lambda_) -> float:
+    """
+    Determine and return the probability of observing >= k reads,
+     given the value of lambda for this specific cell and specific ARG.
+     Note that k = the actual observed ARG read count.
+    """
+    
     if lambda_ == 0:
         return 0
     # Probability of observing >= k reads purely by random background ambient noise
@@ -28,11 +34,18 @@ def filter_args(
     asv_barcode_summary_tsv: str, primers_file,
     filtered_counts_summary_tsv: str, filtered_binary_summary_tsv: str, stats_filtering_summary_tsv: str, 
     alpha: float = 0.05):
+    """
+    Remove background ARG noise - that is, cells with too few reads of a given ARG should not be considered to have that ARG.
+    Hence nullify these low ARG read count values in the barcode summary.
+    Use an algorithm based on the Poisson distribution to determine whether or not a given read count is sufficient,
+     based on both the specific cell and the specific ARG (this entails a bidirectional normalization).
+    """"
 
-    arg_names = get_arg_names(primers_file)
-    
     # Note that alpha is the family-wise error rate / significance threshold
     # This controls false positives per cell
+        
+    # preliminary step
+    arg_names = get_arg_names(primers_file)
 
     # input and output dataframes
     df_original_asv_summary = pd.read_csv(asv_barcode_summary_tsv, sep="\t", index_col = "Barcode")
@@ -52,8 +65,11 @@ def filter_args(
 
     # core algorithm; filtering and statistics gathering
 
+    # iterate through each barcode/cell
     for idx in df_original_asv_summary.index.to_list():
         num_16s_reads = df_original_asv_summary["Total # of 16s reads"].loc[idx]
+
+        # iterate through each ARG
         for arg in arg_names:
             k = df_original_asv_summary.loc[idx, arg] # raw number of reads of the specific arg in this cell
 
@@ -68,11 +84,11 @@ def filter_args(
 
             else:
                 # if there are reads, check if # of reads meets min threshold, using Poisson probability
-                # Bidirectional normalization
+                # Bidirectional normalization to calculate lambda
                 r_j = arg_global_sum[arg] / total_16s_global
                 lambda_ij = num_16s_reads * r_j
                 
-                # Execute statistical evaluation
+                # Execute statistical evaluation to determine probability of observing >=k reads, given the value of lambda
                 p_value = find_poisson_survival_probability(k, lambda_ij)
 
                 # Statistical Decision Engine
