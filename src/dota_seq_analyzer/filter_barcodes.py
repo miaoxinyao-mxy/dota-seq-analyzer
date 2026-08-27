@@ -3,9 +3,14 @@ import pandas as pd
 
 def filter_barcodes_in_df(df, min_16s_reads: int = 5, max_contam: float = 0.1, min_barcodes: int = 10):
     """
+    Filter out barcodes with low 16s sequencing depth, high contamination, taxonomy only classified to bacteria-level,
+     and optionally taxonomic classifications with low # of barcodes. 
+    This modifies the barcode summary table (removes rows corresponding to the filtered-out barcodes).
     Input: pandas dataframe indexed by barcode, and with the following columns: 
-    predicted_taxonomy, confidence, contamination, total 16s reads, technical noise count, ARGs
+     predicted_taxonomy, confidence, contamination, total 16s reads, technical noise count, ARGs
     """
+
+    # original status
     original_num_barcodes = len(df)
     print("Pre-filtering # of barcodes:", original_num_barcodes)    
 
