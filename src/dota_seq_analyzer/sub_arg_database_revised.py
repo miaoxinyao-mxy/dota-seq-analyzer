@@ -26,6 +26,17 @@ def create_sub_arg_barcode_summary(
     min_confidence, min_noise_reads, noise_cutoff_ratio, include_all_targets=False,
     alpha=0.05, max_shift_sub_arg=2, max_mm_sub_arg=0):
 
+    """
+    Main function for creating the sub-ARG barcode summary.
+    Note that "sub-ARG" refers to a subtype of the parent ARG.
+    This new version of the barcode summary will have ARG read counts
+     replaced with either the name of the consensus sub-ARG for that ARG in that cell,
+     or the parent ARG name (if unable to confidently classify to the sub-ARG level), 
+     or "0" if ARG is not present.
+    Hence this sub-ARG barcode summary provides more specific information regarding
+     which sub-ARGs are present in each cell.
+    """
+        
     # note that input barcode summary should have already undergone first round of filtering 
     # (i.e. min 16s reads, contamination, unclassified taxonomy, min barcodes),
     # as well as ARG background noise removal
@@ -115,10 +126,23 @@ def write_sub_arg_barcode_summary(
     sub_arg_seqs_list, sub_arg_barcode_summary_tsv, extra_mle_info_sub_arg_tsv,
     p_match, p_none, p_error, alpha_prior, beta_prior,
     min_confidence, min_noise_reads, noise_cutoff_ratio):
-    
+    """
+    Update the barcode summary to include sub-ARG information, and write to a TSV.
+    Specifically, replace each numeric ARG read count with either the consensus sub-ARG name,
+     parent ARG name (if either a consensus sub-ARG could not be confidently identified, or if the ARG is not eligible for sub-ARGs),
+     or "0" if ARG is not present in that cell.
+    Arbitrarily name the observed sub-ARGs in order of frequency, and record the sub-ARG sequence for each arbitrary name in a text file.
+    In this names-to-sequences file, also include the cell count for each sub-ARG -> this will be used when filtering out sub-ARGs later on.
+    When using the MLE consensus algorithm to determine consensus sub-ARGs, record supplementary info (e.g. contamination level) in a separate TSV.
+    Return the updated sub-ARG barcode summary as a pandas dataframe.
+    """
+
+    # copy the original ARG-based barcode summary to the new sub-ARG-based barcode summary dataframe
     df_sub_arg = pd.DataFrame(df_arg)
     df_sub_arg[arg_names] = df_sub_arg[arg_names].astype(str)
 
+    # make a new dataframe to record supplementary/extra information
+    # this info will be generated when determining the consensus sub-ARG for each relevant ARG in each cell, using the MLE consensus algorithm
     barcodes = df_arg.index
     mle_output_cols = ["Predicted_sub-ARG", "Confidence", "Contamination", "Total_#_of_ARG_reads", "Technical_noise_count"]
     cols_for_mle_df = []
@@ -128,36 +152,57 @@ def write_sub_arg_barcode_summary(
     df_extra_mle_info = pd.DataFrame(index = barcodes, columns = cols_for_mle_df)
     df_extra_mle_info[:] = "-"
 
+    # iterate through each barcode/cell
     for bc in barcodes:
+        # for this specific barcode, obtain all distinct core sequences for all ARGs
+        # each sequence will also have the number of the ARG it corresponds to,
+        # and the # of reads having that sequence
         read_counts_all_args = sub_arg_seqs_by_barcode[bc]
-        
+
+        # iterate through each ARG that is eligible to have sub-ARGs
         for arg in genes_eligible_for_sub_args:
 
-            gene_num = arg_names.index(arg)
+            gene_num = arg_names.index(arg) # get the number corresponding to the current ARG
 
+            # continue to next iteration, if cell does not contain this ARG
             if df_arg.loc[bc, arg] == 0:
                 continue
 
+            # collect all distinct core sequences for the given ARG in the given cell, 
+            # along with the count of # of reads having each sequence,
+            # into the read_counts dictionary
             read_counts = {}
             for seq, count in read_counts_all_args.items():
+                # note that seq is in the form of e.g. "ATCGATCG_2", 
+                # where "ATCGATCG" is the core sequence, and 2 refers to the ARG number
                 if int(seq.split("_")[1]) == gene_num:
                     read_counts[seq.split("_")[0]] = count
 
+            # determine (if possible) one consensus sub-ARG for this ARG in this cell, using the MLE consensus algorithm
             final_sub_arg, total_reads, technical_noise_count, last_valid_confidence, bayesian_contamination_mean \
             = sub_arg_parse_and_analyze_perfect_corrected(
             read_counts, p_match, p_none, p_error, alpha_prior, beta_prior,
             min_confidence, min_noise_reads, noise_cutoff_ratio)
 
+            # record info in sub-ARG barcode summary, based on whether or not a consensus sub-ARG was determined
             if final_sub_arg is not None:
+                # if a consensus sub-ARG was determined
+                # sub-ARG barcode summary: replace ARG read count with the sequence of the consensus sub-ARG
                 df_sub_arg.loc[bc, arg] = final_sub_arg
+                # extra MLE info table: record info outputted by MLE consensus algorithm
                 df_extra_mle_info.loc[bc, f"{arg}: Predicted_sub-ARG"] = final_sub_arg
                 df_extra_mle_info.loc[bc, f"{arg}: Confidence"] = last_valid_confidence
                 df_extra_mle_info.loc[bc, f"{arg}: Contamination"] = bayesian_contamination_mean
                 df_extra_mle_info.loc[bc, f"{arg}: Total_#_of_ARG_reads"] = total_reads
                 df_extra_mle_info.loc[bc, f"{arg}: Technical_noise_count"] = technical_noise_count
             else:
+                # if a consensus sub-ARG could not be confidently determined
+                # sub-ARG barcode summary: replace ARG read count with "[ARG]_parent", where [ARG] is replaced by the name of the current ARG
                 df_sub_arg.loc[bc, arg] = f"{arg}_parent"
 
+    # assign arbitrary names to each of the consensus sub-ARG sequences, and document these appropriately
+    # note this step is done after consensus sub-ARGs have been identified for all cells,
+    # so that the naming of these sub-ARG sequences can be organized by frequency of the sequences on a global scale
     with open(sub_arg_seqs_list, 'w') as f:
 
         f.write("Sub-ARG_Arbitrary_Name\tCell_count\tCore_sequence\n")
@@ -166,29 +211,32 @@ def write_sub_arg_barcode_summary(
         # replace sequences with their new names in the barcode summary
         # also record these names-to-sequences in a text file
         for arg in genes_eligible_for_sub_args:
+            # obtain all consensus sub-ARG sequences for this ARG, across all cells
             final_sub_arg_seqs = df_sub_arg.loc[ \
                 (df_sub_arg[arg] != f"{arg}_parent") & \
                 (df_sub_arg[arg] != "0") & \
                 (df_sub_arg[arg] != "0.0"), \
                 arg].to_list()
 
+            # name sub-ARG sequences from most to least common, on a global scale
+            # e.g. TEM_<A> would have more cells associated with it than TEM_<B>
             ranked_final_sub_arg_seqs = Counter(final_sub_arg_seqs).most_common()
 
             for i, (seq, cell_count) in enumerate(ranked_final_sub_arg_seqs, start=1):
-                sub_arg_name = f"{arg}_<{get_alpha_name(i)}>"
-                f.write(f"{sub_arg_name}\t{cell_count}\t{seq}\n")
-                df_sub_arg.loc[df_sub_arg[arg] == seq, arg] = sub_arg_name
+                sub_arg_name = f"{arg}_<{get_alpha_name(i)}>" # use an alphabetical naming system to distinguish different sub-ARGs of the same ARG
+                f.write(f"{sub_arg_name}\t{cell_count}\t{seq}\n") # record the sequence associated with this new arbitrary sub-ARG name in a text file
+                df_sub_arg.loc[df_sub_arg[arg] == seq, arg] = sub_arg_name # update the sub-ARG barcode summary to replace sub-ARG sequences with their new names
 
                 df_extra_mle_info.loc[df_extra_mle_info[f"{arg}: Predicted_sub-ARG"] == seq, \
-                    f"{arg}: Predicted_sub-ARG"] = sub_arg_name
+                    f"{arg}: Predicted_sub-ARG"] = sub_arg_name     # update the extra MLE info table to replace sub-ARG sequences with their new names
 
+    # update sub-ARG barcode summary for ARGs that are not eligible for sub-ARGs
+    # specifically, replace numeric ARG read counts with either the ARG name or "0"
     for bc in df_sub_arg.index:
         for arg in arg_names:
-
             # skip over the sub-ARG columns, because we already handled those
             if arg in genes_eligible_for_sub_args:
                 continue
-
             # replace numeric read counts with either the ARG name (if present), or "0" (if absent)
             try:
                 num = int(float(df_sub_arg.loc[bc, arg]))
@@ -196,7 +244,8 @@ def write_sub_arg_barcode_summary(
                     df_sub_arg.loc[bc, arg] = arg
             except:
                 assert False # original values should be integer read counts, so return assertion error if not
-                                
+
+    # write dataframes to output TSV files
     df_sub_arg.to_csv(sub_arg_barcode_summary_tsv, sep = "\t", index_label = "Barcode")
     df_extra_mle_info.to_csv(extra_mle_info_sub_arg_tsv, sep = "\t", index_label = "Barcode")
 
