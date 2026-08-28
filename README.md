@@ -45,7 +45,7 @@ dota-seq-analyzer -1 reads1.fastq -2 reads2.fastq -p primers.csv -r reference.fa
 
 An optional AMR reference is included in `database/amr-reference-db.tar.gz`.
 
-Run `dota-seq-analyzer --help` for database overrides and the Kraken2 thread option.
+Run `dota-seq-analyzer --help` for database overrides, the Kraken2 thread option, and filtering options. By default, taxa must be represented by at least 10 cells. Use `--min-cells-per-taxon 5` to retain taxa with at least five cells, `--min-cells-per-taxon 1` to retain every taxon represented after Stage 1, or `--min-cells-per-taxon 0` to disable Stage 2 taxonomy count filtering.
 
 ## Output
 

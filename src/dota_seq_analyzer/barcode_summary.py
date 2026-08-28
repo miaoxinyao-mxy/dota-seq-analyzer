@@ -30,6 +30,8 @@ def find_arg_data(packet_list: List[Dict], num_arg_genes: int):
     return gene_counts
     
 # 2026-08-10: Added defaults to parameters that followed defaulted arguments. Reason: Python otherwise rejects this function before the pipeline can run.
+# 2026-08-28: Added the configurable Stage 2 threshold at the end of the signature.
+# Reason: preserve existing positional callers while exposing the new numeric control.
 def write_barcode_summary_to_tsv(b_with_ids_filename: str, 
     _16s_packet_filename: str, arg_packet_filename: str, 
     unfiltered_tsv_filename: str, tsv_filename: str, primers_filename: str,
@@ -37,7 +39,7 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
     p_match: float = 0.90, p_none: float = 0.09, p_error: float = 0.01,
     alpha_prior: float = 1.0, beta_prior: float = 9.0,
     min_confidence: float = 0.95, min_noise_reads: int = 2,
-    noise_cutoff_ratio: float = 0.05):
+    noise_cutoff_ratio: float = 0.05, min_barcodes: int = 10):
     """Obtain and compile all per-cell taxonomic & target gene count data into a single 'barcode summary', and write to a TSV file"""
         
     with open(b_with_ids_filename, 'r') as b_with_ids_file, \
@@ -75,7 +77,7 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
         df = pd.DataFrame.from_dict(rows, orient="index", columns=find_column_names(primers_filename))
         # filter barcodes, and write barcode summary to tsv
         df.to_csv(unfiltered_tsv_filename, sep = "\t", index_label = "Barcode")
-        filter_barcodes_in_df(df, min_16s_reads, max_contam) # filter barcodes
+        filter_barcodes_in_df(df, min_16s_reads, max_contam, min_barcodes=min_barcodes) # filter barcodes
         df.to_csv(tsv_filename, sep = "\t", index_label = "Barcode")
 
 def find_column_names(primers_filename):
@@ -146,6 +148,9 @@ def main():
     parser.add_argument("--primers_filename", type=str, required=True)
     parser.add_argument("--min_16s_reads", type=int, default = 5)
     parser.add_argument("--max_contam", type=float, default = 0.1)
+    # 2026-08-28: Expose the Stage 2 threshold while retaining the current default.
+    # Reason: users can control low-count taxon filtering without a separate skip flag.
+    parser.add_argument("--min_cells_per_taxon", type=int, default=10)
 
     parser.add_argument("--p_match", type=float, default=0.90)
     parser.add_argument("--p_none", type=float, default=0.09)
@@ -157,6 +162,9 @@ def main():
     parser.add_argument("--noise_cutoff_ratio", type=float, default=0.05)
 
     args = parser.parse_args()
+
+    if args.min_cells_per_taxon < 0:
+        parser.error("--min_cells_per_taxon must be non-negative")
 
     # 2026-08-10: Materialize the temporary output directory before writing summaries.
     # Reason: the default tmp paths must work in a new result directory.
@@ -182,7 +190,8 @@ def main():
         args.unfiltered_tsv_filename, args.tsv_filename, args.primers_filename,
         args.min_16s_reads, args.max_contam, 
         args.p_match, args.p_none, args.p_error, args.alpha_prior, args.beta_prior,
-        args.min_confidence, args.min_noise_reads, args.noise_cutoff_ratio)
+        args.min_confidence, args.min_noise_reads, args.noise_cutoff_ratio,
+        args.min_cells_per_taxon)
 
 if __name__ == "__main__":
     main()

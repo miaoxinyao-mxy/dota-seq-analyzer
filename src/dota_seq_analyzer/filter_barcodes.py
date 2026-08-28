@@ -10,6 +10,11 @@ def filter_barcodes_in_df(df, min_16s_reads: int = 5, max_contam: float = 0.1, m
      predicted_taxonomy, confidence, contamination, total 16s reads, technical noise count, ARGs
     """
 
+    # 2026-08-28: Reject negative taxonomy thresholds at the function boundary.
+    # Reason: negative values have no meaningful minimum-cell interpretation.
+    if min_barcodes < 0:
+        raise ValueError("min_barcodes must be non-negative")
+
     # original status
     original_num_barcodes = len(df)
     print("Pre-filtering # of barcodes:", original_num_barcodes)    
@@ -50,6 +55,13 @@ def filter_barcodes_in_df(df, min_16s_reads: int = 5, max_contam: float = 0.1, m
     # Reason: df.iloc[0] below raises IndexError for an empty filtered table.
     if df.empty:
         print("Barcode filtering complete - final # of barcodes: 0")
+        return
+
+    if min_barcodes == 0:
+        # 2026-08-28: Treat zero as an explicit request to disable Stage 2.
+        # Reason: a numeric threshold should provide the same control as the former skip option.
+        print("Stage 2: Taxonomic minimum-cell filtering disabled.")
+        print("Barcode filtering complete - final # of barcodes:", stage_1_barcodes)
         return
 
     print(f"Stage 2: Filter out low-signal cells: specifically, taxonomic classifications that have <{min_barcodes} barcodes...")

@@ -13,7 +13,7 @@ Audit date: 2026-08-28. Repository commit audited: 5b91860. The handoff note is 
 | 5 | Translate comments | DOCUMENTATION ONLY | Non-English comments remain but do not affect execution | Separate cleanup if desired | Low |
 | 6 | TEM_A/TEM_B and separate R1/R2 shifts | ALREADY FIXED | One shift is applied to the concatenated R1|R2 core | Compare R1 and R2 independently, then cluster only when both pass | High |
 | 7 | Standardize terminology | DOCUMENTATION ONLY | Internal ARG/sub-ARG terms remain; public CLI is generic | Standardize approved user-facing terms | Medium |
-| 8 | Make taxonomy minimum-cell filter optional | READY TO FIX | Stage 2 always runs with min_barcodes=10 | Add an explicit option after choosing the default | Medium |
+| 8 | Make taxonomy minimum-cell filter optional | DONE / FIXED | Stage 2 threshold is configurable with a numeric cell-count parameter | No separate skip flag; default remains 10 and 0 disables Stage 2 | Medium |
 | 9 | Family vs single target semantics | PI / SCIENTIFIC DECISION REQUIRED | Current Mode supports blank/ssr; legacy single/family is compatibility only | Define biological semantics | High |
 | 10 | Zero-inflation in Poisson lambda | PI / SCIENTIFIC DECISION REQUIRED | Global-rate Poisson is used; no zero-inflated model exists | Analyze real data before changing model | High |
 | 11 | Add within_cluster_boundary | ALREADY FIXED | Function is present and called in ASV and sub-ARG clustering | No change | — |
@@ -204,7 +204,7 @@ sub_arg_database_revised.py, helper_functions.py, filter_args.py, filter_barcode
 
 **Verdict**
 
-Items 9, 10, 16, 17, 20, and 21 require PI/scientific decisions. Item 6 is a confirmed implementation bug under the clarified intended design. Items 7, 13, and 14 are not demonstrated bugs. Items 8, 18, and 19 are real feature/behavior gaps. Item 12 is already reflected in implementation. Item 15 cannot be reproduced from this repository.
+Item 8 is fixed with a numeric threshold parameter; values 0, 1, 5, and 10 were validated. Items 9, 10, 16, 17, 20, and 21 require PI/scientific decisions. Item 6 is a confirmed implementation bug under the clarified intended design. Items 7, 13, and 14 are not demonstrated bugs. Item 8 is now fixed; Items 18 and 19 remain feature/behavior gaps. Item 12 is already reflected in implementation. Item 15 cannot be reproduced from this repository.
 
 **Recommended action / risk**
 
@@ -241,6 +241,8 @@ Taxonomic normalization; family vs single semantics; zero-inflated modeling; ext
 * validate_inputs.py: added check_reference_fasta() for structural FASTA validation; missing-input main() branches now exit non-zero.
 * cli.py: calls check_reference_fasta() when -r/--reference is supplied.
 * extract_16s_reads.py, create_ID_packets.py, match_barcodes_to_IDs_revised.py, barcode_summary.py, asv_typing_revised.py, filter_args.py, sub_arg_database_revised.py, blastn_sub_arg.py, and figures_program.py: missing required path branches now terminate non-zero; successful paths are unchanged.
+* barcode_summary.py and filter_barcodes.py: added configurable Stage 2 minimum-cell filtering; 10 is the default, 1 retains every surviving taxon, and 0 disables Stage 2.
+* cli.py and README.md: exposed and documented `--min-cells-per-taxon`.
 * figures_program.py::make_asv_arg_table(): replaced the single OXA display exception with generic wrapping and added numeric text to retained non-zero heat-map cells. Original target values and matrix thresholding remain unchanged.
 
 **Behavior before**
@@ -262,11 +264,11 @@ FASTA validation is intentionally structural and does not impose a nucleotide al
 * Focused filter_args.py missing-input subprocess test: exit code 1 and expected error: PASS.
 * Package CLI --help and invalid-reference rejection: PASS; a package-import compatibility issue was found and fixed within the reference-validation change.
 * Figures stage run in /home/xy/02_dota-seq/test_runs/audit_figures with successful test05 inputs: PASS; all three PNGs generated.
-* CoreASV naming, Stage 2 filtering, and PI/scientific items were not changed.
+* CoreASV naming and PI/scientific items were not changed. Stage 2 filtering was changed only for the requested numeric threshold interface.
 
 ## 8. Open items / next actions
 
-1. Review and commit/push the completed four scoped engineering fixes.
+1. Review the remaining unresolved engineering items, beginning with ASV naming only after the public naming decision.
 2. Decide whether structural FASTA validation should later add alphabet or duplicate-ID rules.
 3. Approve heat-map label width and numeric precision if publication formatting requires it.
 4. Obtain PI decisions for the scientific items listed above.
@@ -349,6 +351,31 @@ python -m py_compile src/dota_seq_analyzer/*.py: PASS. Synthetic pair with R1 di
 
 The mismatch threshold is treated as applying independently to each component; this matches the clarified design and existing zero-mismatch default. Original TEM fixture and a real-data end-to-end rerun remain recommended. No PI/scientific items were changed.
 
+
+## Item 8 resolution — configurable taxonomy cell-count threshold — 2026-08-28
+
+**Files/functions changed**
+
+* `src/dota_seq_analyzer/cli.py::main()`: added public `--min-cells-per-taxon`, default `10`, with negative-value rejection.
+* `src/dota_seq_analyzer/barcode_summary.py::write_barcode_summary_to_tsv()` and `main()`: passed the numeric threshold through the existing summary stage.
+* `src/dota_seq_analyzer/filter_barcodes.py::filter_barcodes_in_df()`: retained the existing `min_barcodes` internal name, rejected negative values, and treats `0` as an explicit Stage 2 disable.
+* `README.md`: documented the parameter and values.
+
+**Behavior before**
+
+Stage 2 always used the internal default `min_barcodes=10`; the public pipeline had no numeric control.
+
+**Behavior after**
+
+The public parameter is `--min-cells-per-taxon`. The default `10` preserves the previous behavior. `1` retains every taxon surviving Stage 1, `0` disables Stage 2 taxonomy count filtering, and other non-negative values set the minimum cells per taxon. Negative values are rejected clearly. File formats and downstream stages are unchanged.
+
+**Validation**
+
+The focused dataframe regression passed for thresholds `0`, `1`, `5`, and `10`, with expected retained-cell counts `8`, `8`, `7`, and `0`; negative values raised the expected error. Public `--help` showed the new option, and the public CLI rejected `--min-cells-per-taxon=-1`. Python compilation and `git diff --check` passed. Only the four scoped files were modified.
+
+**Assumptions / unverified points**
+
+The code uses barcode rows internally, while the public parameter correctly describes them as cells in this single-cell workflow. The default threshold remains scientifically unchanged.
 
 ## Follow-up validation — TEM_A/TEM_B-like regression — 2026-08-28
 

@@ -41,6 +41,9 @@ def main() -> None:
     parser.add_argument("-o", "--output", required=True, help="Output directory")
     parser.add_argument("--threads", type=int, default=4, help="Kraken2 threads (default: 4)")
     parser.add_argument("--taxonomy-db", help="Extracted Kraken2 taxonomy database directory")
+    # 2026-08-28: Expose the Stage 2 threshold in the public CLI.
+    # Reason: users can control low-count taxon filtering without a separate skip flag.
+    parser.add_argument("--min-cells-per-taxon", type=int, default=10, help="Minimum cells required per taxon; 0 disables Stage 2 filtering (default: 10)")
     # 2026-08-10: Run reference annotation only when a FASTA is explicitly supplied.
     # Reason: DoTA-Seq Analyzer supports arbitrary targets that do not belong in the bundled AMR database.
     parser.add_argument("-r", "--reference", help="Optional reference FASTA for BLAST annotation")
@@ -57,6 +60,8 @@ def main() -> None:
             parser.error(f"{label} file not found: {path}")
     if args.threads < 1:
         parser.error("--threads must be at least 1")
+    if args.min_cells_per_taxon < 0:
+        parser.error("--min-cells-per-taxon must be non-negative")
 
     taxonomy_db = (
         Path(args.taxonomy_db).expanduser().resolve()
@@ -183,6 +188,8 @@ def main() -> None:
             "tmp/packets_arg",
             "--primers_filename",
             str(primers),
+            "--min_cells_per_taxon",
+            str(args.min_cells_per_taxon),
         ],
         output_dir,
     )
