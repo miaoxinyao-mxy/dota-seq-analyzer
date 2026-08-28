@@ -348,3 +348,17 @@ python -m py_compile src/dota_seq_analyzer/*.py: PASS. Synthetic pair with R1 di
 **Remaining assumptions**
 
 The mismatch threshold is treated as applying independently to each component; this matches the clarified design and existing zero-mismatch default. Original TEM fixture and a real-data end-to-end rerun remain recommended. No PI/scientific items were changed.
+
+
+## Follow-up validation — TEM_A/TEM_B-like regression — 2026-08-28
+
+The original TEM_A/TEM_B primer/reference fixture was not present in the repository or existing test directories. A fixture with the same independent-shift pattern was therefore passed through the actual `sub_arg_database_revised.py::cluster_sub_arg_seqs()` implementation.
+
+**Result**
+
+* Old shared-shift distance: 7; sequences would remain separate.
+* New independent-shift distance: 0.
+* Resulting cluster count: 1.
+* Regression status: PASS.
+
+This validates the implementation path for the reported behavior, but does not replace validation against the original biological TEM_A/TEM_B sequences.
