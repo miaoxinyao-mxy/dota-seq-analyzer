@@ -12,8 +12,10 @@ import json
 
 # 1-based extraction coordinates to accurately truncate and merge R1/R2 reads 
 # while safely skipping the 20bp cell barcode sequence at the start of R2, as well as the ~20bp overlap sequence.
-R1_START, R1_END = 30, 110
-R2_START, R2_END = 70, 110 
+# 2026-08-28: Match the sub-locus core endpoints to the ASV core endpoints.
+# Reason: both analyses should use the same paired-read sequence region.
+R1_START, R1_END = 30, 120
+R2_START, R2_END = 70, 120
 
 def create_sub_arg_barcode_summary(
     filtered_counts_summary_arg_tsv: str, 

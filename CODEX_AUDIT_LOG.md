@@ -21,7 +21,7 @@ Audit date: 2026-08-28. Repository commit audited: 5b91860. The handoff note is 
 | 13 | Use packet JSONL instead of R2 FASTQs | CANNOT VERIFY | Current pipeline intentionally consumes derived R2 FASTQs | Benchmark and trace fields before considering change | Low |
 | 14 | Put json.dumps in format_packet | DOCUMENTATION ONLY | Manual JSON construction is fragile but no failure was demonstrated | Optional focused cleanup with serialization tests | Low |
 | 15 | qnrB family/single and missing BLAST hits | CANNOT VERIFY | Exact primer/reference fixture is absent from repo evidence | Reproduce with the original files | High |
-| 16 | Sub-ARG coordinates 110 vs ASV 120 | PI / SCIENTIFIC DECISION REQUIRED | The two modules use different extraction ends | Confirm intended biological coordinates | High |
+| 16 | Sub-ARG coordinates 110 vs ASV 120 | DONE / FIXED | Coordinates are now unified at ASV endpoints | No further change unless the experimental design is revised | High |
 | 17 | Shared alpha for Poisson and decay | PI / SCIENTIFIC DECISION REQUIRED | Both default to 0.05 but are separate parameters | Decide whether one or two thresholds are intended | High |
 | 18 | Rename CoreASV to ASV | DONE / FIXED | ASV output now emits ASV_N identifiers | No algorithm or schema change; downstream value matching updated through the new identifier format | Medium |
 | 19 | Annotate heat-map values above 1% | READY TO FIX | Heat map has no numeric cell annotations | Add only after display requirements are approved | Medium |
@@ -234,7 +234,7 @@ None — audit only.
 
 ## 5. PI / scientific decisions
 
-Taxonomic normalization; family vs single semantics; zero-inflated modeling; extraction coordinates; shared versus separate alpha; taxid display/provenance; and species evidence for ASVs. The TEM/ASV independent-shift issue is confirmed implementation behavior, not a PI decision.
+Taxonomic normalization; family vs single semantics; zero-inflated modeling; shared versus separate alpha; taxid display/provenance; and species evidence for ASVs. The TEM/ASV independent-shift issue is confirmed implementation behavior, not a PI decision.
 
 ## 6. Code changes made
 
@@ -428,3 +428,35 @@ Clustering, ordering, counts, extraction, thresholds, and scientific interpretat
 **Assumptions / unverified points**
 
 `Core_ASV_ID` and `Assigned_core_asv` are retained as schema/internal field names, not generated identifier values. The original biological TEM_A/TEM_B fixture remains unavailable; this rename does not alter clustering behavior.
+
+
+## Item 16 resolution - unified ASV and sub-locus extraction coordinates - 2026-08-28
+
+**Decision**
+
+The PI selected the ASV endpoint for both analyses. ASV and sub-locus extraction now use R1 [30:120] and R2 [70:120].
+
+**File/function changed**
+
+* src/dota_seq_analyzer/sub_arg_database_revised.py::extract_core() and its module constants R1_START, R1_END, R2_START, and R2_END.
+
+The ASV implementation was unchanged because it already used these coordinates.
+
+**Behavior before**
+
+ASV used [30:120] and [70:120]; sub-locus reconstruction used [30:110] and [70:110].
+
+**Behavior after**
+
+Both analyses extract the same paired-read region. Output formats, clustering logic, thresholds, and downstream names remain unchanged.
+
+**Validation**
+
+* python -m py_compile src/dota_seq_analyzer/*.py: PASS.
+* git diff --check: PASS.
+* Synthetic 120-base R1/R2 input produced identical ASV and sub-locus cores of lengths 90 and 50: PASS.
+* Minimal diff confirmed: only sub_arg_database_revised.py changed for this item.
+
+**Assumptions**
+
+This coordinate choice is an explicit PI decision based on the requested unification; no independent experimental-coordinate validation was performed.
