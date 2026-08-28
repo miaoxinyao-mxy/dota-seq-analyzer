@@ -3,7 +3,40 @@ import csv
 import os
 import sys
 import argparse
-from helper_functions import get_arg_names, open_maybe_gzip
+try:
+    from .helper_functions import get_arg_names, open_maybe_gzip
+except ImportError:
+    # 2026-08-28: Keep direct script execution compatible with package imports.
+    # Reason: the public CLI imports this validator as a package module.
+    from helper_functions import get_arg_names, open_maybe_gzip
+
+def check_reference_fasta(reference_file: str):
+    """Check that a reference file contains at least one structurally valid FASTA record."""
+    saw_record = False
+    saw_sequence = False
+    with open_maybe_gzip(reference_file, "r") as reference:
+        for line_number, raw_line in enumerate(reference, start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith(">"):
+                if saw_record and not saw_sequence:
+                    return f"<Reference FASTA> Record has no sequence before line {line_number}"
+                if len(line) == 1:
+                    return f"<Reference FASTA> Empty record ID on line {line_number}"
+                saw_record = True
+                saw_sequence = False
+            else:
+                if not saw_record:
+                    return f"<Reference FASTA> Sequence appears before a header on line {line_number}"
+                if any(char.isspace() for char in line):
+                    return f"<Reference FASTA> Whitespace in sequence on line {line_number}"
+                saw_sequence = True
+        if not saw_record:
+            return "<Reference FASTA> File contains no FASTA records"
+        if not saw_sequence:
+            return "<Reference FASTA> Last record has no sequence"
+    return "Valid"
 
 def check_input_files(fwd_fastq: str, rev_fastq: str, primers_file: str):
     """
@@ -170,13 +203,13 @@ def main():
     # make sure input file paths exist
     if not os.path.exists(args.r1_fastq):
         print(f"❌ Error: input file not found: {args.r1_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.r2_fastq):
         print(f"❌ Error: input file not found: {args.r2_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.primers_file):
         print(f"❌ Error: input file not found: {args.primers_file}")
-        return
+        sys.exit(1)
 
     # exit from the program if not all input files are valid
     all_files_valid = check_input_files(args.r1_fastq, args.r2_fastq, args.primers_file)

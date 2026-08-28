@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from .helper_functions import get_target_modes
+from .validate_inputs import check_reference_fasta
 
 
 def _run_step(name: str, command: list[str], output_dir: Path) -> None:
@@ -70,6 +71,10 @@ def main() -> None:
         )
     if reference is not None and not reference.is_file():
         parser.error(f"reference FASTA not found: {reference}")
+    if reference is not None:
+        reference_validation = check_reference_fasta(str(reference))
+        if reference_validation != "Valid":
+            parser.error(reference_validation)
 
     target_modes = get_target_modes(str(primers))
     # 2026-08-11: Trigger phase-variation analysis only for SSR primer targets.

@@ -7,6 +7,7 @@ from collections import Counter, defaultdict
 from typing import List, Dict, Tuple
 import os
 import argparse
+import sys
 import json
 
 # 1-based extraction coordinates to accurately truncate and merge R1/R2 reads 
@@ -444,7 +445,7 @@ def cluster_sub_arg_seqs(
             in_dominant_seqs = False
             # iterate through all dominant sub-ARG sequences identified so far for that ARG
             for seq_d in clustered_sub_arg_seqs[gene_num]: 
-                d = semi_global_distance(seq_s, seq_d, max_shift=max_shift_sub_arg) # calculate distance between current sequence and given dominant sequence
+                d = paired_semi_global_distance(seq_s, seq_d, max_shift=max_shift_sub_arg) # calculate distance between current sequence and given dominant sequence
                 # if current sequence can be clustered with one of the dominant sequences, then merge their read ID lists
                 if d <= max_mm_sub_arg and within_cluster_boundary(clustered_sub_arg_seqs[gene_num], seq_s, max_mm_sub_arg, max_shift_sub_arg):
                     in_dominant_seqs = True
@@ -582,6 +583,17 @@ def semi_global_distance(
         best = min(best, mismatches)
     return best
 
+def paired_semi_global_distance(a, b, max_shift=2):
+    """Compare paired R1|R2 cores while allowing each read its own shift."""
+    a_r1, a_r2 = a.split("|", 1)
+    b_r1, b_r2 = b.split("|", 1)
+    # 2026-08-28: Compare R1 and R2 independently instead of sharing one shift.
+    # Reason: each read can have a valid indexing/length shift independent of its mate.
+    return max(
+        semi_global_distance(a_r1, b_r1, max_shift=max_shift),
+        semi_global_distance(a_r2, b_r2, max_shift=max_shift),
+    )
+
 def within_cluster_boundary(
     candidate_seqs: List[str], new_seq: str, 
     max_dist=0, max_shift_sub_arg=2) -> bool:
@@ -589,7 +601,7 @@ def within_cluster_boundary(
     Check whether adding new_seq keeps the whole cluster boundary <= max_dist.
     """
     for old_seq in candidate_seqs:
-        d = semi_global_distance(new_seq, old_seq, max_shift=max_shift_sub_arg)
+        d = paired_semi_global_distance(new_seq, old_seq, max_shift=max_shift_sub_arg)
         if d > max_dist:
             return False
     return True
@@ -746,22 +758,22 @@ def main():
     # make sure input file paths exist
     if not os.path.exists(args.filtered_counts_summary_arg_tsv):
         print(f"❌ Error: input file not found: {args.filtered_counts_summary_arg_tsv}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.r1_fastq):
         print(f"❌ Error: input file not found: {args.r1_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.r2_fastq):
         print(f"❌ Error: input file not found: {args.r2_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.primers_file):
         print(f"❌ Error: input file not found: {args.primers_file}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.b_with_ids):
         print(f"❌ Error: input file not found: {args.b_with_ids}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.arg_packets):
         print(f"❌ Error: input file not found: {args.arg_packets}")
-        return
+        sys.exit(1)
 
 
     create_sub_arg_barcode_summary(

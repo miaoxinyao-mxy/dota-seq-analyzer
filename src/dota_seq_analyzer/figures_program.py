@@ -9,6 +9,8 @@ from collections import Counter
 from helper_functions import get_arg_names, ensure_output_directories
 import os
 import argparse
+import textwrap
+import sys
 
 # ===============================================================================================
 
@@ -91,10 +93,9 @@ def make_asv_arg_table(
                     most_specific_tax = tax_lvl
             asv_or_tax_labels.append(most_specific_tax)
 
-    # adjust length of long ARG name to better fit the x axis
-    for i in range(len(final_gene_names)):
-        if final_gene_names[i] == "OXA-48 like (oxa-3)":
-            final_gene_names[i] = "OXA-48 like\n(oxa-3)"
+    # 2026-08-28: Wrap every long target label for display, not just one OXA label.
+    # Reason: target names are user-provided and stored names must remain unchanged.
+    final_gene_names = [textwrap.fill(str(name), width=18, break_long_words=True, break_on_hyphens=False) for name in final_gene_names]
 
     # edit the ASV-ARG table - nullify values below ARG threshold
     df_asv_arg.mask(df_asv_arg < arg_threshold, 0, inplace = True)
@@ -116,7 +117,15 @@ def make_asv_arg_table(
         return
 
     # plot the ASV-ARG table as a heat map
-    axs = plt.matshow(df_asv_arg.to_numpy(), norm=colors.LogNorm(), cmap = "Blues").axes
+    heatmap_values = df_asv_arg.to_numpy()
+    axs = plt.matshow(heatmap_values, norm=colors.LogNorm(), cmap = "Blues").axes
+    # 2026-08-28: Display retained heat-map values in each non-zero cell.
+    # Reason: color alone does not expose the quantitative association.
+    for row_index in range(heatmap_values.shape[0]):
+        for column_index in range(heatmap_values.shape[1]):
+            value = heatmap_values[row_index, column_index]
+            if value > 0:
+                axs.text(column_index, row_index, f"{value:.2f}", ha="center", va="center", fontsize=8)
     axs.set_xlabel("Target", fontweight = "bold", fontsize = 11)
     axs.xaxis.tick_bottom()
     axs.set_ylabel(y_axis_label, fontweight = "bold", fontsize = 11)
@@ -465,23 +474,23 @@ def main():
     # make sure input file paths exist
     if not os.path.exists(args.unfiltered_barcode_summary_tsv):
         print(f"❌ Error: input file not found: {args.unfiltered_barcode_summary_tsv}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.final_asv_barcode_summary_tsv):
         print(f"❌ Error: input file not found: {args.final_asv_barcode_summary_tsv}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.asv_barcode_summary_no_sub_args_tsv):
         print(f"❌ Error: input file not found: {args.asv_barcode_summary_no_sub_args_tsv}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.primers_file):
         print(f"❌ Error: input file not found: {args.primers_file}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.b_with_ids):
         print(f"❌ Error: input file not found: {args.b_with_ids}")
-        return
+        sys.exit(1)
     # global_asv_tsv file only needs to exist if we're using ASVs
     if args.use_asvs_str == "yes" and not os.path.exists(args.global_asv_tsv):
         print(f"❌ Error: input file not found: {args.global_asv_tsv}")
-        return
+        sys.exit(1)
 
     make_figures(
         args.use_asvs_str, args.unfiltered_barcode_summary_tsv, 

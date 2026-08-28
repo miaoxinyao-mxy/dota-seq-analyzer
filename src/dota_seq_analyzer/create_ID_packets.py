@@ -4,6 +4,7 @@ from extract_16s_reads import check_primer_match_seq
 import json
 import os
 import argparse
+import sys
 from typing import List, Dict
 from helper_functions import open_maybe_gzip, ensure_output_directories
 
@@ -283,19 +284,19 @@ def main():
     # make sure input file paths exist
     if not os.path.exists(args.r1_fastq):
         print(f"❌ Error: input file not found: {args.r1_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.r2_fastq):
         print(f"❌ Error: input file not found: {args.r2_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.primers_filename):
         print(f"❌ Error: input file not found: {args.primers_filename}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.kraken_output):
         print(f"❌ Error: input file not found: {args.kraken_output}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.kraken_report):
         print(f"❌ Error: input file not found: {args.kraken_report}")
-        return
+        sys.exit(1)
 
     generate_packets(
         args.r1_fastq, args.r2_fastq, args.primers_filename,

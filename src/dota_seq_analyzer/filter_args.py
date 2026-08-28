@@ -3,6 +3,7 @@ import math
 import pandas as pd
 from helper_functions import get_arg_names, ensure_output_directories
 import argparse
+import sys
 import os
 
 def find_poisson_survival_probability(k, lambda_) -> float:
@@ -141,10 +142,10 @@ def main():
     # make sure input file paths exist
     if not os.path.exists(args.input_arg_barcode_summary_tsv):
         print(f"❌ Error: input file not found: {args.input_arg_barcode_summary_tsv}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.primers_file):
         print(f"❌ Error: input file not found: {args.primers_file}")
-        return
+        sys.exit(1)
 
     filter_args(
         args.input_arg_barcode_summary_tsv, args.primers_file,

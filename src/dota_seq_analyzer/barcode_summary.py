@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import argparse
+import sys
 import os
 from typing import List, Dict, Tuple
 import pandas as pd
@@ -164,16 +165,16 @@ def main():
     # make sure input file paths exist
     if not os.path.exists(args.b_with_ids_filename):
         print(f"❌ Error: input file not found: {args.b_with_ids_filename}")
-        return
+        sys.exit(1)
     if not os.path.exists(args._16s_packet_filename):
         print(f"❌ Error: input file not found: {args._16s_packet_filename}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.arg_packet_filename):
         print(f"❌ Error: input file not found: {args.arg_packet_filename}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.primers_filename):
         print(f"❌ Error: input file not found: {args.primers_filename}")
-        return
+        sys.exit(1)
 
     write_barcode_summary_to_tsv(
         args.b_with_ids_filename, 

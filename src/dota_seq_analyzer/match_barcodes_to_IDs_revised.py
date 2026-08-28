@@ -3,6 +3,7 @@ from collections import Counter
 from typing import List, Dict, Tuple
 import os
 import argparse
+import sys
 from helper_functions import ensure_output_directories
 
 def extract_all_b_with_ids(
@@ -182,13 +183,13 @@ def main():
     # make sure input file paths exist
     if not os.path.exists(args._16s_rev_fastq):
         print(f"❌ Error: input file not found: {args._16s_rev_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.arg_rev_fastq):
         print(f"❌ Error: input file not found: {args.arg_rev_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.unclassified_rev_fastq):
         print(f"❌ Error: input file not found: {args.unclassified_rev_fastq}")
-        return
+        sys.exit(1)
 
     create_b_with_ids_file(
         args._16s_rev_fastq, args.arg_rev_fastq, args.unclassified_rev_fastq,

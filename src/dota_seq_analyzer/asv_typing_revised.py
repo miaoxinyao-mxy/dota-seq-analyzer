@@ -7,6 +7,8 @@ from typing import List, Dict
 from helper_functions import get_arg_names, ensure_output_directories
 import os
 import argparse
+# 2026-08-28: Exit non-zero when a required stage input is missing.
+# Reason: the public CLI uses subprocess check=True to stop failed stages.
 
 # =====================================================================
 # CORE BIOPHYSICAL & BIOINFORMATICS HYPERPARAMETERS
@@ -58,12 +60,23 @@ def semi_global_distance(a, b, max_shift=2):
         best = min(best, mismatches)
     return best
 
+def paired_semi_global_distance(a, b, max_shift=2):
+    """Compare paired R1|R2 cores while allowing each read its own shift."""
+    a_r1, a_r2 = a.split("|", 1)
+    b_r1, b_r2 = b.split("|", 1)
+    # 2026-08-28: Compare R1 and R2 independently instead of sharing one shift.
+    # Reason: each read can have a valid indexing/length shift independent of its mate.
+    return max(
+        semi_global_distance(a_r1, b_r1, max_shift=max_shift),
+        semi_global_distance(a_r2, b_r2, max_shift=max_shift),
+    )
+
 def within_cluster_boundary(candidate_seqs, new_seq, max_dist=2):
     """
     Check whether adding new_seq keeps the whole cluster boundary <= max_dist.
     """
     for old_seq in candidate_seqs:
-        d = semi_global_distance(new_seq, old_seq, max_shift=MAX_SHIFT)
+        d = paired_semi_global_distance(new_seq, old_seq, max_shift=MAX_SHIFT)
         if d > max_dist:
             return False, d
     return True, max_dist
@@ -173,7 +186,7 @@ def summarize_barcode(core_counter):
             continue
             
         # Compute sliding distance to the single dominant hub
-        d = semi_global_distance(seq, dominant_seq, max_shift=MAX_SHIFT)
+        d = paired_semi_global_distance(seq, dominant_seq, max_shift=MAX_SHIFT)
         
         if d <= MAX_DISTANCE:
             ok, boundary_d = within_cluster_boundary(
@@ -393,19 +406,19 @@ def main():
     # make sure input file paths exist
     if not os.path.exists(args.barcode_summary_tsv):
         print(f"❌ Error: input file not found: {args.barcode_summary_tsv}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.b_with_ids):
         print(f"❌ Error: input file not found: {args.b_with_ids}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.r1_16s_fastq):
         print(f"❌ Error: input file not found: {args.r1_16s_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.r2_16s_fastq):
         print(f"❌ Error: input file not found: {args.r2_16s_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.primers_file):
         print(f"❌ Error: input file not found: {args.primers_file}")
-        return
+        sys.exit(1)
 
     conduct_asv_typing(
         args.barcode_summary_tsv, args.b_with_ids,

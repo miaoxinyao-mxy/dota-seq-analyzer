@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 from typing import Optional, Tuple
+import sys
+# 2026-08-28: Exit non-zero when a required stage input is missing.
+# Reason: the public CLI uses subprocess check=True to stop failed stages.
 from helper_functions import open_maybe_gzip, ensure_output_directories
 import argparse
 import os
@@ -256,13 +259,13 @@ def main():
     # make sure input file paths exist
     if not os.path.exists(args.r1_fastq):
         print(f"❌ Error: input file not found: {args.r1_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.r2_fastq):
         print(f"❌ Error: input file not found: {args.r2_fastq}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.primers_filename):
         print(f"❌ Error: input file not found: {args.primers_filename}")
-        return
+        sys.exit(1)
 
     create_16s_only_fastq(
         args.r1_fastq, args.r2_fastq,

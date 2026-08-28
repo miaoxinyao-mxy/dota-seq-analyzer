@@ -2,6 +2,7 @@
 import subprocess
 import os
 import argparse
+import sys
 from helper_functions import ensure_output_directories
 import pandas as pd
 MAX_HITS = 500
@@ -201,13 +202,13 @@ def main():
     # make sure input file paths exist
     if not os.path.exists(args.sub_arg_seqs_list):
         print(f"❌ Error: input file not found: {args.sub_arg_seqs_list}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.input_fasta):
         print(f"❌ Error: input file not found: {args.input_fasta}")
-        return
+        sys.exit(1)
     if not os.path.exists(args.final_barcode_summary_tsv):
         print(f"❌ Error: input file not found: {args.final_barcode_summary_tsv}")
-        return
+        sys.exit(1)
 
     make_summary_table(
     args.sub_arg_seqs_list, args.blastn_sub_arg_tsv, args.query_fasta, args.input_fasta, args.db,
