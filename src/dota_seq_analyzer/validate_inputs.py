@@ -81,9 +81,9 @@ def check_paired_fastq(fwd_fastq: str, rev_fastq: str):
             i += 1
 
         if id_f != id_r:
-            return "<FASTQ Files> Paired file length error: forward & reverse FASTQ files have different lengths (likely corresponds to different total # of reads)"
+            return "<FASTQ Files> Paired file length error: R1 & R2 FASTQ files have different lengths (likely corresponds to different total # of reads)"
             # we expect f_line = r_line = "" at this point
-            # if not true, then fwd & rev files have different lengths - not good
+            # if not true, then R1 & R2 files have different lengths - not good
 
         return "Valid" # input paired fastq files are valid, if all above conditions have been met
     
@@ -178,6 +178,7 @@ def main():
         print(f"❌ Error: input file not found: {args.primers_file}")
         return
 
+    # exit from the program if not all input files are valid
     all_files_valid = check_input_files(args.r1_fastq, args.r2_fastq, args.primers_file)
     if not all_files_valid:
         sys.exit(1)
