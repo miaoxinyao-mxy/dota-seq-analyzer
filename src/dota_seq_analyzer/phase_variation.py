@@ -65,7 +65,7 @@ def find_tandem_repeats(sequence: str):
 def _target_for_assignment(assignment: str, targets) -> str | None:
     """Match an arbitrary reconstructed-sequence name back to its primer target."""
     for target in sorted(targets, key=len, reverse=True):
-        if assignment == target or assignment.startswith(f"{target}_<"):
+        if assignment == target or assignment.startswith(f"{target}_seq_"):
             return target
     return None
 

@@ -74,7 +74,7 @@ def get_final_gene_names(final_barcode_summary_tsv, first_gene_column_num):
     gene_columns = all_col_names[first_gene_column_num:]
 
     # 2026-08-10: Read retained assignments from cell values rather than family column names.
-    # Reason: sub-ARGs such as CTX-M_<A> are values in the CTX-M column, so column matching silently skipped BLAST.
+    # Reason: sub-ARGs such as CTX-M_seq_1 are values in the CTX-M column, so column matching silently skipped BLAST.
     final_gene_names = set()
     for gene in gene_columns:
         for assignment in df_summary[gene].dropna().astype(str):

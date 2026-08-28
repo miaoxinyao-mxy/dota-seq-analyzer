@@ -23,7 +23,7 @@ Audit date: 2026-08-28. Repository commit audited: 5b91860. The handoff note is 
 | 15 | qnrB family/single and missing BLAST hits | CANNOT VERIFY | Exact primer/reference fixture is absent from repo evidence | Reproduce with the original files | High |
 | 16 | Sub-ARG coordinates 110 vs ASV 120 | PI / SCIENTIFIC DECISION REQUIRED | The two modules use different extraction ends | Confirm intended biological coordinates | High |
 | 17 | Shared alpha for Poisson and decay | PI / SCIENTIFIC DECISION REQUIRED | Both default to 0.05 but are separate parameters | Decide whether one or two thresholds are intended | High |
-| 18 | Rename CoreASV to ASV | READY TO FIX | Output still emits CoreASV_* | Approve compatibility impact, then rename consistently | Medium |
+| 18 | Rename CoreASV to ASV | DONE / FIXED | ASV output now emits ASV_N identifiers | No algorithm or schema change; downstream value matching updated through the new identifier format | Medium |
 | 19 | Annotate heat-map values above 1% | READY TO FIX | Heat map has no numeric cell annotations | Add only after display requirements are approved | Medium |
 | 20 | Remove Kraken taxid suffixes | PI / SCIENTIFIC DECISION REQUIRED | Labels retain suffixes such as _737866 | Decide whether suffixes are provenance | Medium |
 | 21 | Show species for each ASV | PI / SCIENTIFIC DECISION REQUIRED | ASV uses the most specific existing MLE taxonomy; no independent species call | Define evidence and confidence rules | High |
@@ -204,7 +204,7 @@ sub_arg_database_revised.py, helper_functions.py, filter_args.py, filter_barcode
 
 **Verdict**
 
-Item 8 is fixed with a numeric threshold parameter; values 0, 1, 5, and 10 were validated. Items 9, 10, 16, 17, 20, and 21 require PI/scientific decisions. Item 6 is a confirmed implementation bug under the clarified intended design. Items 7, 13, and 14 are not demonstrated bugs. Item 8 is now fixed; Items 18 and 19 remain feature/behavior gaps. Item 12 is already reflected in implementation. Item 15 cannot be reproduced from this repository.
+Item 8 is fixed with a numeric threshold parameter; values 0, 1, 5, and 10 were validated. Items 9, 10, 16, 17, 20, and 21 require PI/scientific decisions. Item 6 is a confirmed implementation bug under the clarified intended design. Items 7, 13, and 14 are not demonstrated bugs. Items 8 and 18 are now fixed; Item 19 remains a feature/behavior gap. Item 12 is already reflected in implementation. Item 15 cannot be reproduced from this repository.
 
 **Recommended action / risk**
 
@@ -264,7 +264,7 @@ FASTA validation is intentionally structural and does not impose a nucleotide al
 * Focused filter_args.py missing-input subprocess test: exit code 1 and expected error: PASS.
 * Package CLI --help and invalid-reference rejection: PASS; a package-import compatibility issue was found and fixed within the reference-validation change.
 * Figures stage run in /home/xy/02_dota-seq/test_runs/audit_figures with successful test05 inputs: PASS; all three PNGs generated.
-* CoreASV naming and PI/scientific items were not changed. Stage 2 filtering was changed only for the requested numeric threshold interface.
+* CoreASV naming was standardized to ASV_N, and sub-locus values to parent_seq_N; PI/scientific items were not changed. Stage 2 filtering was changed only for the requested numeric threshold interface.
 
 ## 8. Open items / next actions
 
@@ -272,7 +272,7 @@ FASTA validation is intentionally structural and does not impose a nucleotide al
 2. Decide whether structural FASTA validation should later add alphabet or duplicate-ID rules.
 3. Approve heat-map label width and numeric precision if publication formatting requires it.
 4. Obtain PI decisions for the scientific items listed above.
-5. Only then consider ASV renaming and packet-input optimization.
+5. Continue with packet-input investigation only after confirming the current downstream field requirements.
 
 ## 9. Session history
 
@@ -389,3 +389,42 @@ The original TEM_A/TEM_B primer/reference fixture was not present in the reposit
 * Regression status: PASS.
 
 This validates the implementation path for the reported behavior, but does not replace validation against the original biological TEM_A/TEM_B sequences.
+
+
+## Item 18 resolution — standardized sequence-cluster names — 2026-08-28
+
+**Old naming behavior**
+
+ASV values were generated as `CoreASV_N`. Sub-locus values were generated as letter-based names such as `TEM_<A>` using `get_alpha_name()`. `filter_sub_args.py` and `phase_variation.py` parsed the old `_<...>`-style suffix (without the display-space).
+
+**New naming rule**
+
+* ASVs: `ASV_1`, `ASV_2`, `ASV_3`, ...
+* Sub-locus clusters: `<parent>_seq_1`, `<parent>_seq_2`, ...
+
+**Files/functions changed**
+
+* `src/dota_seq_analyzer/asv_typing_revised.py::conduct_asv_typing()`: generated ASV values now use `ASV_N`.
+* `src/dota_seq_analyzer/sub_arg_database_revised.py::write_sub_arg_barcode_summary()`: generated sub-locus values now use `<parent>_seq_N`; the unused alphabetic naming helper was removed.
+* `src/dota_seq_analyzer/filter_sub_args.py::run_sub_arg_denoising_pipeline()`: family parsing now removes `_seq_N`.
+* `src/dota_seq_analyzer/phase_variation.py::_target_for_assignment()`: SSR assignments now recognize `_seq_N`.
+* `src/dota_seq_analyzer/blastn_sub_arg.py`: stale naming comment updated; names remain opaque to BLAST.
+
+The existing `Core_ASV_ID` header and `Assigned_core_asv` field name remain unchanged intentionally to preserve file structure; their emitted identifier values are now standardized.
+
+**Downstream impact**
+
+Clustering, ordering, counts, extraction, thresholds, and scientific interpretation are unchanged. Barcode summaries, sub-locus sequence lists, figures, BLAST names, phase-variation assignments, and JSONL assignment values now receive the standardized identifiers.
+
+**Validation**
+
+* Actual ASV stage on clean-run intermediates: emitted `ASV_1`, `ASV_2`, ... and completed successfully.
+* Repeated ASV stage with identical inputs: byte-identical global ASV table; deterministic numbering passed.
+* Actual sub-locus writer path: emitted `TEM_seq_1` and `TEM_seq_2`; repeated run produced identical naming; passed.
+* Downstream `filter_sub_args.py` parser accepted `TEM_seq_1`, `TEM_seq_2`, and `qnrB_seq_1`; passed.
+* Figures stage generated all three PNGs in the project Conda environment; JSONL export wrote 4,120 cell records; passed.
+* Source scan found no executable dependency on `CoreASV_` values, old letter-suffix parsing, or `get_alpha_name()`.
+
+**Assumptions / unverified points**
+
+`Core_ASV_ID` and `Assigned_core_asv` are retained as schema/internal field names, not generated identifier values. The original biological TEM_A/TEM_B fixture remains unavailable; this rename does not alter clustering behavior.

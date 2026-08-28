@@ -21,9 +21,9 @@ def run_sub_arg_denoising_pipeline(filepath, alpha, output_file):
     
     df = pd.read_csv(filepath, sep='\t')
 
-    # 2026-08-10: Remove only the generated _<...> suffix when recovering a target name.
+    # 2026-08-28: Remove only the generated _seq_N suffix when recovering a target name.
     # Reason: primer target names may legitimately contain underscores.
-    df["Family"] = df['Sub-ARG_Arbitrary_Name'].apply(lambda x: str(x).rsplit("_<", 1)[0])
+    df["Family"] = df['Sub-ARG_Arbitrary_Name'].apply(lambda x: str(x).rsplit("_seq_", 1)[0])
     
     # 2026-08-10: Infer the optional decay-control rate internally and fall back to family-wise decay.
     # Reason: primer panels and small read subsets may not contain enough meca observations.
@@ -97,9 +97,9 @@ def run_sub_arg_denoising_pipeline(filepath, alpha, output_file):
 
     
     final_df = pd.DataFrame(final_results)
-    # 2026-08-10: Support alphabetic reconstructed-sequence labels and underscored target names.
-    # Reason: generated labels use forms such as target_<A>, not numeric-only suffixes.
-    final_df['Family'] = final_df['Sub-ARG_final'].apply(lambda x: str(x).rsplit("_<", 1)[0])
+    # 2026-08-28: Support numeric reconstructed-sequence labels and underscored target names.
+    # Reason: standardized generated labels use the parent_seq_N form.
+    final_df['Family'] = final_df['Sub-ARG_final'].apply(lambda x: str(x).rsplit("_seq_", 1)[0])
     final_df = final_df.sort_values(by=['Family', 'Cell_count'], ascending=[True, False])
 
     final_df[['Sub-ARG_final', 'Cell_count']].to_csv(output_file, sep='\t', index=False)

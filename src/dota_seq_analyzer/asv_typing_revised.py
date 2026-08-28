@@ -283,12 +283,14 @@ def conduct_asv_typing(
             global_counter[s["consensus_seq"]] += 1
 
 
+    # 2026-08-28: Emit standardized public ASV cluster identifiers.
+    # Reason: distinguish generated sequence clusters from biological variant names.
     # write global ASV output file, which contains all the ASV sequences matched to their names (e.g. ASV_1)
     seq_to_asv = {}
     with open(global_asv_tsv_filename, "w") as out:
         out.write("Core_ASV_ID\tcell_count\tcore_sequence\n")
         for i, (seq, cell_count) in enumerate(global_counter.most_common(), start=1):
-            asv_id = f"CoreASV_{i}"
+            asv_id = f"ASV_{i}"
             seq_to_asv[seq] = asv_id
             out.write(f"{asv_id}\t{cell_count}\t{seq}\n")
 

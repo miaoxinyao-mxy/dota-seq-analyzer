@@ -201,14 +201,14 @@ def write_sub_arg_barcode_summary(
                 # sub-ARG barcode summary: replace ARG read count with "[ARG]_parent", where [ARG] is replaced by the name of the current ARG
                 df_sub_arg.loc[bc, arg] = f"{arg}_parent"
 
-    # assign arbitrary names to each of the consensus sub-ARG sequences, and document these appropriately
+    # assign standardized names to each consensus sub-locus sequence and document these mappings
     # note this step is done after consensus sub-ARGs have been identified for all cells,
     # so that the naming of these sub-ARG sequences can be organized by frequency of the sequences on a global scale
     with open(sub_arg_seqs_list, 'w') as f:
 
         f.write("Sub-ARG_Arbitrary_Name\tCell_count\tCore_sequence\n")
 
-        # arbitrarily name each of the final sub-ARG sequences
+        # name each final sub-locus sequence in descending global frequency order
         # replace sequences with their new names in the barcode summary
         # also record these names-to-sequences in a text file
         for arg in genes_eligible_for_sub_args:
@@ -220,11 +220,12 @@ def write_sub_arg_barcode_summary(
                 arg].to_list()
 
             # name sub-ARG sequences from most to least common, on a global scale
-            # e.g. TEM_<A> would have more cells associated with it than TEM_<B>
+            # e.g. TEM_seq_1 would have more cells associated with it than TEM_seq_2
             ranked_final_sub_arg_seqs = Counter(final_sub_arg_seqs).most_common()
 
             for i, (seq, cell_count) in enumerate(ranked_final_sub_arg_seqs, start=1):
-                sub_arg_name = f"{arg}_<{get_alpha_name(i)}>" # use an alphabetical naming system to distinguish different sub-ARGs of the same ARG
+                sub_arg_name = f"{arg}_seq_{i}" # 2026-08-28: Use parent_seq_N identifiers for generated sequence clusters.
+                # Reason: distinguish pipeline-generated clusters from pre-existing biological variant names.
                 f.write(f"{sub_arg_name}\t{cell_count}\t{seq}\n") # record the sequence associated with this new arbitrary sub-ARG name in a text file
                 df_sub_arg.loc[df_sub_arg[arg] == seq, arg] = sub_arg_name # update the sub-ARG barcode summary to replace sub-ARG sequences with their new names
 
@@ -267,24 +268,6 @@ def modify_sub_arg_barcode_summary(
     # write to TSV
     df_sub_arg.to_csv(filtered_sub_arg_barcode_summary_tsv, sep = "\t", index_label = "Barcode")
 
-
-def get_alpha_name(sub_arg_num: int) -> str:
-    """Determine alpha-based name for sub-ARG, based on the number name equivalent"""
-    # note that input sub-ARG numbers are 1-indexed, not 0-indexed
-
-    # preliminary steps
-    alphabet = "abcdefghijklmnopqrstuvwxyz".upper()
-    assert sub_arg_num < 26*27, \
-        f"Error: there should be less than 26*27 = 702 sub-ARGs per ARG, for the arbitrary sub-ARG naming system to work"
-
-    # extra character added if number > 26 -> e.g. if TEM_<Z> was already taken, next name would be TEM_<AA>, then TEM_<AB>, etc.
-    starting_char = ""
-    if sub_arg_num > 26:
-        starting_char = alphabet[(sub_arg_num - 1)//26 - 1]
-
-    # main character - this is the only character if number <= 26 (e.g. TEM_<C>), otherwise the second character if number > 26 (e.g. TEM_<AC>)
-    alpha_name = starting_char + alphabet[sub_arg_num % 26 - 1]
-    return alpha_name
 
 def match_ids_to_genes_bc(
     b_with_ids: str, arg_packets: str, 
@@ -346,12 +329,12 @@ def get_all_sub_arg_seqs(
 
     Returned value is a list of dictionaries, where each dictionary corresponds to one ARG.
     Each dictionary is of the form: (e.g. of TEM as being the parent ARG for this dictionary)
-    {"Sub-ARG seq #1": ["ID#5|Barcode#30", "ID#8|Barcode#7"],   # corresponds to e.g. TEM_<1>
-     "Sub-ARG seq #2": ["ID#10|Barcode#1"], ...}                # corresponds to e.g. TEM_<2>
+    {"Sub-ARG seq #1": ["ID#5|Barcode#30", "ID#8|Barcode#7"],   # corresponds to e.g. TEM_seq_1
+     "Sub-ARG seq #2": ["ID#10|Barcode#1"], ...}                # corresponds to e.g. TEM_seq_2
     Note that all values chosen for this example are random - the goal above was just to show
     the sub_arg_seqs formatting.
     Each ID corresponding to a specific sub-ARG sequence are added to that sub-ARG's list
-    (e.g. ID#5 and ID#8 would correspond to TEM_<1> in the example above.
+    (e.g. ID#5 and ID#8 would correspond to TEM_seq_1 in the example above.
     The ID names are from the fastq file. Barcodes are included with the IDs in the format of
     "ID|Barcode", to faciliate later downstream processing.
     Note also that "Sub-ARG seq #1" would be in the format outputted by the extract_core() function;
