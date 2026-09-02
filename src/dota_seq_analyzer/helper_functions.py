@@ -57,6 +57,14 @@ def get_target_modes(primers_file: str) -> Dict[str, str]:
 def open_maybe_gzip(path: str, mode: str = "rt"):
     """Open plain text or .gz file based on extension."""
     if path.endswith(".gz"):
+        # 2026-09-02: Normalize text modes for gzip inputs.
+        # Reason: gzip.open("r") returns bytes, while FASTQ validators and parsers expect strings.
+        if mode == "r":
+            mode = "rt"
+        elif mode == "w":
+            mode = "wt"
+        elif mode == "a":
+            mode = "at"
         return gzip.open(path, mode)
     else:
         return open(path, mode)
