@@ -147,12 +147,16 @@ def make_primers_to_genes_dict(primers):
     return primers_to_genes
 
 def format_packet(id, barcode, gene, taxonomy):
-    """Format text into JSON object style"""
-    
-    tax_str = str(taxonomy).replace("True", "true").replace("False", "false").replace("None", "null").replace("'", '"')
-    if isinstance(gene, str):
-        gene = f'"{gene}"'
-    return '{"ID": "' + id + '", "barcode": "' + barcode + '", "gene": ' + str(gene) + ', "taxonomy": ' + tax_str + '}'
+    """Serialize one packet as valid JSON."""
+
+    # 2026-09-02: Use the JSON encoder instead of manual string replacement.
+    # Reason: IDs, barcodes, and taxonomy names may contain characters that need JSON escaping.
+    return json.dumps({
+        "ID": id,
+        "barcode": barcode,
+        "gene": gene,
+        "taxonomy": taxonomy,
+    })
 
 
 def generate_packets(

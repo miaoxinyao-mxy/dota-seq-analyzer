@@ -348,6 +348,10 @@ def get_all_sub_arg_seqs(
 
     sub_arg_seqs = [{} for _ in range(len(arg_names))] 
 
+    # 2026-09-02: Count eligible ARG reads that cannot provide a complete core.
+    # Reason: extract_core() returns None for an R1 or R2 shorter than the required 120 bp.
+    skipped_short_reads = 0
+
     with open_maybe_gzip(fwd_fastq, 'r') as fwd, open_maybe_gzip(rev_fastq, 'r') as rev:
         # read in the read_ID line
         f_line = fwd.readline()
@@ -386,11 +390,19 @@ def get_all_sub_arg_seqs(
                 # obtain core of the R1 & R2 sequences for this read
                 # then add this to the appropriate position in the sub_arg_seqs dictionary
                 seq_pair = extract_core(f_seq, r_seq)
+                if seq_pair is None:
+                    # 2026-09-02: Do not pass incomplete cores into sequence clustering.
+                    # Reason: clustering expects an R1|R2 string and cannot process None.
+                    skipped_short_reads += 1
+                    i += 1
+                    continue
                 if seq_pair in sub_arg_seqs[gene_num].keys():
                     sub_arg_seqs[gene_num][seq_pair].append(f"{id_f}|{bc}")
                 else:
                     sub_arg_seqs[gene_num][seq_pair] = [f"{id_f}|{bc}"]
             i += 1
+
+    print(f"Skipped {skipped_short_reads} eligible ARG reads with R1 or R2 shorter than {R1_END} bp.")
 
     return sub_arg_seqs
 
