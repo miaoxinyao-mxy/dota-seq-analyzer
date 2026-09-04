@@ -3,7 +3,11 @@ import json
 import argparse
 import sys
 import os
+import multiprocessing
 from typing import List, Dict, Tuple
+
+BARCODE_CHUNK_SIZE = 2048
+_BARCODE_WORKER_CONFIG = None
 import pandas as pd
 from mle_revised import parse_and_analyze_perfect_corrected_revised
 from filter_barcodes import filter_barcodes_in_df
@@ -32,6 +36,82 @@ def find_arg_data(packet_list: List[Dict], num_arg_genes: int):
 # 2026-08-10: Added defaults to parameters that followed defaulted arguments. Reason: Python otherwise rejects this function before the pipeline can run.
 # 2026-08-28: Added the configurable Stage 2 threshold at the end of the signature.
 # Reason: preserve existing positional callers while exposing the new numeric control.
+
+def _initialize_barcode_worker(packet_indexes, num_arg_genes, analysis_params):
+    """Initialize read-only packet indexes and analysis settings once per worker."""
+    global _BARCODE_WORKER_CONFIG
+    _BARCODE_WORKER_CONFIG = (packet_indexes, num_arg_genes, analysis_params)
+
+
+def _process_barcode_chunk(lines):
+    """Analyze one ordered barcode chunk without writing output files."""
+    (packet_indexes, num_arg_genes, analysis_params) = _BARCODE_WORKER_CONFIG
+    _16s_packet_index, arg_packet_index = packet_indexes
+    rows = {}
+    for i, line in enumerate(lines):
+        barcode, _16s_packet_list, arg_packet_list = get_barcode_packet_lists(
+            line, _16s_packet_index, arg_packet_index)
+        (p_match, p_none, p_error, alpha_prior, beta_prior,
+         min_confidence, min_noise_reads, noise_cutoff_ratio) = analysis_params
+        result = parse_and_analyze_perfect_corrected_revised(
+            _16s_packet_list, p_match, p_none, p_error, alpha_prior, beta_prior,
+            min_confidence, min_noise_reads, noise_cutoff_ratio)
+        total_16s_reads, technical_noise_count, predicted_taxonomy, confidence, contamination = result
+        data_arg = find_arg_data(arg_packet_list, num_arg_genes)
+        write_content_tsv_row(
+            barcode, total_16s_reads, technical_noise_count, predicted_taxonomy,
+            confidence, contamination, data_arg, rows, i,
+        )
+    return list(rows.items())
+
+
+def _iter_barcode_chunks(barcode_filename, chunk_size):
+    """Yield contiguous barcode chunks in original file order."""
+    with open(barcode_filename, 'r') as barcode_file:
+        chunk = []
+        for line in barcode_file:
+            chunk.append(line)
+            if len(chunk) == chunk_size:
+                yield chunk
+                chunk = []
+        if chunk:
+            yield chunk
+
+
+def _write_barcode_summary_parallel(
+    b_with_ids_filename, _16s_packet_index, arg_packet_index,
+    unfiltered_tsv_filename, tsv_filename, primers_filename,
+    min_16s_reads, max_contam, p_match, p_none, p_error,
+    alpha_prior, beta_prior, min_confidence, min_noise_reads,
+    noise_cutoff_ratio, min_barcodes, num_arg_genes, analysis_workers,
+):
+    """Run barcode analysis in workers and finalize output in the parent."""
+    analysis_params = (
+        p_match, p_none, p_error, alpha_prior, beta_prior,
+        min_confidence, min_noise_reads, noise_cutoff_ratio,
+    )
+    with multiprocessing.Pool(
+        processes=analysis_workers,
+        initializer=_initialize_barcode_worker,
+        initargs=([_16s_packet_index, arg_packet_index], num_arg_genes, analysis_params),
+    ) as pool:
+        rows = {}
+        processed = 0
+        for chunk_rows in pool.imap(
+            _process_barcode_chunk,
+            _iter_barcode_chunks(b_with_ids_filename, BARCODE_CHUNK_SIZE),
+        ):
+            rows.update(chunk_rows)
+            processed += len(chunk_rows)
+            if processed % 10000 == 0:
+                print(f"Processed {processed} barcodes")
+
+    df = pd.DataFrame.from_dict(rows, orient="index", columns=find_column_names(primers_filename))
+    df.to_csv(unfiltered_tsv_filename, sep="\t", index_label="Barcode")
+    filter_barcodes_in_df(df, min_16s_reads, max_contam, min_barcodes=min_barcodes)
+    df.to_csv(tsv_filename, sep="\t", index_label="Barcode")
+
+
 def write_barcode_summary_to_tsv(b_with_ids_filename: str, 
     _16s_packet_filename: str, arg_packet_filename: str, 
     unfiltered_tsv_filename: str, tsv_filename: str, primers_filename: str,
@@ -39,7 +119,7 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
     p_match: float = 0.90, p_none: float = 0.09, p_error: float = 0.01,
     alpha_prior: float = 1.0, beta_prior: float = 9.0,
     min_confidence: float = 0.95, min_noise_reads: int = 2,
-    noise_cutoff_ratio: float = 0.05, min_barcodes: int = 10):
+    noise_cutoff_ratio: float = 0.05, min_barcodes: int = 10, analysis_workers: int = 1):
     """Obtain and compile all per-cell taxonomic & target gene count data into a single 'barcode summary', and write to a TSV file"""
         
     with open(b_with_ids_filename, 'r') as b_with_ids_file, \
@@ -57,6 +137,20 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
         # Reason: rescanning every packet file for every read caused quadratic runtime.
         _16s_packet_index = build_packet_index(_16s_packet_file_content)
         arg_packet_index = build_packet_index(arg_packet_file_content)
+        num_arg_genes = len(get_arg_names(primers_filename))
+        if analysis_workers < 1:
+            raise ValueError("analysis_workers must be at least 1")
+        # 2026-09-04: Analyze barcode chunks in workers while keeping output in the parent.
+        # Reason: the per-barcode analysis is independent, but output order must remain stable.
+        if analysis_workers > 1:
+            _write_barcode_summary_parallel(
+                b_with_ids_filename, _16s_packet_index, arg_packet_index,
+                unfiltered_tsv_filename, tsv_filename, primers_filename,
+                min_16s_reads, max_contam, p_match, p_none, p_error,
+                alpha_prior, beta_prior, min_confidence, min_noise_reads,
+                noise_cutoff_ratio, min_barcodes, num_arg_genes, analysis_workers,
+            )
+            return
 
         # iterate through barcodes, and obtain & compile information for each barcode
         i = 0
@@ -68,11 +162,12 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
                 min_confidence, min_noise_reads, noise_cutoff_ratio)
             # 2026-08-10: Pass the primer-derived ARG count into the summary writer.
             # Reason: empty ARG barcodes still need a row with the correct number of columns.
-            data_arg = find_arg_data(arg_packet_list, len(get_arg_names(primers_filename)))
+            data_arg = find_arg_data(arg_packet_list, num_arg_genes)
             write_content_tsv_row(barcode, total_16s_reads, technical_noise_count, predicted_taxonomy, confidence, contamination, data_arg, rows, i) # content rows
 
-            print(f"Processed {i} barcodes")
             i += 1
+            if i % 10000 == 0:
+                print(f"Processed {i} barcodes")
 
         df = pd.DataFrame.from_dict(rows, orient="index", columns=find_column_names(primers_filename))
         # filter barcodes, and write barcode summary to tsv
@@ -160,6 +255,7 @@ def main():
     parser.add_argument("--min_confidence", type=float, default=0.95)
     parser.add_argument("--min_noise_reads", type=int, default=2)
     parser.add_argument("--noise_cutoff_ratio", type=float, default=0.05)
+    parser.add_argument("-@", "--threads", dest="analysis_workers", type=int, default=1, metavar="INT")
 
     args = parser.parse_args()
 
@@ -191,7 +287,7 @@ def main():
         args.min_16s_reads, args.max_contam, 
         args.p_match, args.p_none, args.p_error, args.alpha_prior, args.beta_prior,
         args.min_confidence, args.min_noise_reads, args.noise_cutoff_ratio,
-        args.min_cells_per_taxon)
+        args.min_cells_per_taxon, args.analysis_workers)
 
 if __name__ == "__main__":
     main()

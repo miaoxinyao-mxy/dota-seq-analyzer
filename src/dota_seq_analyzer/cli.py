@@ -192,6 +192,8 @@ def main() -> None:
             "tmp/packets_arg",
             "--primers_filename",
             str(primers),
+            "--threads",
+            str(args.analysis_workers),
             "--min_cells_per_taxon",
             str(args.min_cells_per_taxon),
         ],
