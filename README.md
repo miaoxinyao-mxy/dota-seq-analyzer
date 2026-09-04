@@ -34,7 +34,7 @@ Leave `Mode` blank for standard target detection. Use `ssr` for phase-variation 
 ## Run
 
 ```bash
-dota-seq-analyzer -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results
+dota-seq-analyzer -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results -@ 8
 ```
 
 Analysis is serial by default. For larger datasets, use `-@ N` or `--threads N` to parallelize the sequential analysis stages across CPU cores; 8 is a reasonable starting point on a multi-core workstation.
