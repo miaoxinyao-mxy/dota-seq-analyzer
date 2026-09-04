@@ -96,16 +96,34 @@ def main() -> None:
 
     python = sys.executable
     script = lambda name: str(source_dir / name)
+    filtered_r1 = output_dir / "tmp/filtered_R1.fastq"
+    filtered_r2 = output_dir / "tmp/filtered_R2.fastq"
 
+    _run_step(
+        "Filter reads",
+        [
+            python,
+            script("filter_reads.py"),
+            "--r1",
+            str(r1),
+            "--r2",
+            str(r2),
+            "--output-r1",
+            str(filtered_r1),
+            "--output-r2",
+            str(filtered_r2),
+        ],
+        output_dir,
+    )
     _run_step(
         "Validate inputs",
         [
             python,
             script("validate_inputs.py"),
             "--r1_fastq",
-            str(r1),
+            str(filtered_r1),
             "--r2_fastq",
-            str(r2),
+            str(filtered_r2),
             "--primers_file",
             str(primers),
         ],
@@ -117,9 +135,9 @@ def main() -> None:
             python,
             script("extract_16s_reads.py"),
             "--r1_fastq",
-            str(r1),
+            str(filtered_r1),
             "--r2_fastq",
-            str(r2),
+            str(filtered_r2),
             "--primers_filename",
             str(primers),
             "--threads",
@@ -151,9 +169,9 @@ def main() -> None:
             python,
             script("create_ID_packets.py"),
             "--r1_fastq",
-            str(r1),
+            str(filtered_r1),
             "--r2_fastq",
-            str(r2),
+            str(filtered_r2),
             "--primers_filename",
             str(primers),
             "--kraken_output",
@@ -242,9 +260,9 @@ def main() -> None:
             "--arg_packets",
             "tmp/packets_arg",
             "--r1_fastq",
-            str(r1),
+            str(filtered_r1),
             "--r2_fastq",
-            str(r2),
+            str(filtered_r2),
             "--primers_file",
             str(primers),
             "--filtered_sub_arg_barcode_summary_tsv",
