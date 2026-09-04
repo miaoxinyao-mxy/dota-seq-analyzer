@@ -37,6 +37,8 @@ Leave `Mode` blank for standard target detection. Use `ssr` for phase-variation 
 dota-seq-analyzer -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results
 ```
 
+Primer classification is serial by default. Use `--primer-workers N` to classify read chunks with N worker processes; `--threads` remains the Kraken2 thread setting.
+
 To annotate reconstructed target sequences with a reference FASTA:
 
 ```bash

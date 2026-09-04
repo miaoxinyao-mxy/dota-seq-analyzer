@@ -460,3 +460,29 @@ Both analyses extract the same paired-read region. Output formats, clustering lo
 **Assumptions**
 
 This coordinate choice is an explicit PI decision based on the requested unification; no independent experimental-coordinate validation was performed.
+
+
+## Read-level primer multiprocessing — 2026-09-04
+
+**Files changed**
+
+* `src/dota_seq_analyzer/create_ID_packets.py`: added ordered 2,048-read chunking, worker initialization, worker classification, and a main-process output path selected by `primer_workers > 1`.
+* `src/dota_seq_analyzer/cli.py`: added public `--primer-workers` (default 1), while `--threads` remains Kraken2-only.
+* `README.md`: documented the new option.
+* `tests/test_create_id_packets.py`: added a multiprocessing worker classification regression.
+
+**Behavior**
+
+Workers only classify reads with the existing `determine_gene_revised()` and `check_primer_match_seq()` logic. The main process consumes Kraken taxonomy lines sequentially and writes all packet/FASTQ outputs in ordered chunk order.
+
+**Validation**
+
+* Fixed 10,000-pair spike-in 1 subset: serial, 2, 4, 8, and 16 worker packet and derived FASTQ outputs were byte-identical.
+* Empty input and final partial chunk checks passed.
+* Full unittest discovery: 8 tests passed.
+* Full Python compilation and `git diff --check` passed.
+* Benchmark medians/runs: 1 worker 33.35 s, 2 workers 19.24 s, 4 workers 12.34 s, 8 workers 7.31 s, 16 workers 7.27 s.
+
+**Recommendation**
+
+Use 8 primer workers for this 10,000-pair benchmark environment; 16 provided no additional benefit. The default remains 1 for conservative behavior. Each chunk is serialized to a worker and the classified records are serialized back; chunk size 2,048 limits task overhead.

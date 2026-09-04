@@ -1,4 +1,5 @@
 import copy
+import multiprocessing
 import sys
 import unittest
 from pathlib import Path
@@ -47,6 +48,23 @@ class PrimerPrecomputationTests(unittest.TestCase):
             expected = old_determine_gene(self.primers, f_seq, r_seq, 4, 4, 42, self.mapping)
             actual = packets.determine_gene_revised(self.primers, f_seq, r_seq, 4, 4, 42, self.mapping, self.records)
             self.assertEqual(expected, actual)
+
+    def test_chunk_worker_matches_serial_classification(self):
+        records = [
+            (0, "@id0", "@id0", "id0", "ACGT" + "A" * 20, "A" * 42 + "TTAA" + "G" * 10, "I" * 56),
+            (1, "@id1", "@id1", "id1", "GGGG" + "A" * 20, "A" * 42 + "CCCC" + "G" * 10, "I" * 56),
+        ]
+        expected = [
+            packets.determine_gene_revised(self.primers, record[4], record[5], 4, 4, 42, self.mapping, self.records)
+            for record in records
+        ]
+        with multiprocessing.Pool(
+            processes=2,
+            initializer=packets._initialize_primer_worker,
+            initargs=(self.primers, self.mapping, self.records, 4, 4, 42),
+        ) as pool:
+            _, classified = pool.map(packets._classify_primer_chunk, [(0, records)])[0]
+        self.assertEqual(expected, [gene for _, gene in classified])
 
     def test_first_match_order_and_record_reuse(self):
         f_seq = "ACGT" + "A" * 20

@@ -5,8 +5,12 @@ import json
 import os
 import argparse
 import sys
+import multiprocessing
 from typing import List, Dict
 from helper_functions import open_maybe_gzip, ensure_output_directories
+
+PRIMER_CHUNK_SIZE = 2048
+_PRIMER_WORKER_CONFIG = None
 
 """
 This program converts raw data from fastq and kraken files into 
@@ -173,12 +177,84 @@ def format_packet(id, barcode, gene, taxonomy):
     })
 
 
+def _initialize_primer_worker(primers, primers_to_genes_dict, primer_records, max_shift, max_mm, primer_start_num):
+    global _PRIMER_WORKER_CONFIG
+    _PRIMER_WORKER_CONFIG = (primers, primers_to_genes_dict, primer_records, max_shift, max_mm, primer_start_num)
+
+
+def _classify_primer_chunk(index_and_records):
+    chunk_index, records = index_and_records
+    primers, primers_to_genes_dict, primer_records, max_shift, max_mm, primer_start_num = _PRIMER_WORKER_CONFIG
+    classified = []
+    for record in records:
+        gene = determine_gene_revised(primers, record[4], record[5], max_shift, max_mm, primer_start_num, primers_to_genes_dict, primer_records)
+        classified.append((record, gene))
+    return chunk_index, classified
+
+
+def _read_primer_chunks(fwd_file, rev_file, chunk_size=PRIMER_CHUNK_SIZE):
+    i = 0
+    f_line = fwd_file.readline()
+    r_line = rev_file.readline()
+    while f_line != "" and r_line != "":
+        records = []
+        while len(records) < chunk_size and f_line != "" and r_line != "":
+            id_f_unparsed = f_line.strip()
+            id_r_unparsed = r_line.strip()
+            id_f = id_f_unparsed.split(" ")[0].strip("@")
+            id_r = id_r_unparsed.split(" ")[0].strip("@")
+            assert id_f == id_r, f"ID from forward and reverse fastq files do not match on line {i*4 + 1}"
+            f_seq = fwd_file.readline().strip()
+            r_seq = rev_file.readline().strip()
+            fwd_file.readline()
+            rev_file.readline()
+            fwd_file.readline()
+            r_quality = rev_file.readline().strip()
+            records.append((i, id_f_unparsed, id_r_unparsed, id_f, f_seq, r_seq, r_quality))
+            f_line = fwd_file.readline()
+            r_line = rev_file.readline()
+            i += 1
+        yield records
+
+
+def _generate_packets_parallel(
+    fwd_fastq_filename, rev_fastq_filename, kraken_output_filename, tax_nodes_lists,
+    primers, primers_to_genes_dict, primer_records, barcode_len, max_shift, max_mm,
+    primer_start_num, out_16s_packet_filename, out_arg_packet_filename,
+    out_unclassified_packet_filename, out_arg_rev_fastq, out_unclassified_rev_fastq,
+    primer_workers):
+    unmatched_gene = [0] * max(0, len(primers) - 2)
+    with open_maybe_gzip(fwd_fastq_filename, "r") as fwd_file, open_maybe_gzip(rev_fastq_filename, "r") as rev_file, open(kraken_output_filename, "r") as taxonomy_file, open(out_16s_packet_filename, "w") as out_16s_packet_file, open(out_unclassified_packet_filename, "w") as out_unclassified_packet_file, open(out_arg_packet_filename, "w") as out_arg_packet_file, open(out_arg_rev_fastq, "w") as out_arg_rev_fastq_file, open(out_unclassified_rev_fastq, "w") as out_unclassified_rev_fastq_file:
+        t_line = taxonomy_file.readline()
+        chunks = enumerate(_read_primer_chunks(fwd_file, rev_file))
+        with multiprocessing.Pool(processes=primer_workers, initializer=_initialize_primer_worker, initargs=(primers, primers_to_genes_dict, primer_records, max_shift, max_mm, primer_start_num)) as pool:
+            for _, classified in pool.imap(_classify_primer_chunk, chunks):
+                for record, gene in classified:
+                    i, id_f_unparsed, id_r_unparsed, id_f, f_seq, r_seq, r_quality = record
+                    barcode = r_seq[0:barcode_len]
+                    taxonomy = None
+                    if gene == "16s":
+                        assert t_line != "", f"Taxonomy file does not have another line to match the 16s read on line {i*4 + 1} of fastq file"
+                        id_t = t_line.split("\t")[1]
+                        id_r = id_r_unparsed.split(" ")[0].strip("@")
+                        assert id_r == id_t, f"ID from fastq file and kraken output file do not match on line {i*4 + 1} of kraken output file"
+                        taxonomy = determine_16s_taxonomy(t_line, tax_nodes_lists)
+                        t_line = taxonomy_file.readline()
+                        out_16s_packet_file.write(format_packet(id_f, barcode, gene, taxonomy) + "\n")
+                    elif gene == unmatched_gene:
+                        out_unclassified_packet_file.write(format_packet(id_f, barcode, gene, taxonomy) + "\n")
+                        out_unclassified_rev_fastq_file.write(f"{id_r_unparsed}\n{r_seq}\n+\n{r_quality}\n")
+                    else:
+                        out_arg_packet_file.write(format_packet(id_f, barcode, gene, taxonomy) + "\n")
+                        out_arg_rev_fastq_file.write(f"{id_r_unparsed}\n{r_seq}\n+\n{r_quality}\n")
+
+
 def generate_packets(
     fwd_fastq_filename: str, rev_fastq_filename: str, primers_filename: str, 
     kraken_output_filename: str, report_filename: str,
     barcode_len: int, max_shift: int, max_mm: int, primer_start_num: int,
     out_16s_packet_filename: str, out_arg_packet_filename: str, out_unclassified_packet_filename: str,
-    out_arg_rev_fastq: str, out_unclassified_rev_fastq: str
+    out_arg_rev_fastq: str, out_unclassified_rev_fastq: str, primer_workers: int = 1
     ):
     """
     Generates json-like "packets" of data (including barcode, gene, and taxonomy) for each read ID.
@@ -196,6 +272,16 @@ def generate_packets(
     primer_records = make_primer_records(primers)
     primers_to_genes_dict = make_primers_to_genes_dict(primers)
     unmatched_gene = [0] * max(0, len(primers) - 2)
+    if primer_workers < 1:
+        raise ValueError("primer_workers must be at least 1")
+    if primer_workers > 1:
+        _generate_packets_parallel(
+            fwd_fastq_filename, rev_fastq_filename, kraken_output_filename, tax_nodes_lists,
+            primers, primers_to_genes_dict, primer_records, barcode_len, max_shift, max_mm,
+            primer_start_num, out_16s_packet_filename, out_arg_packet_filename,
+            out_unclassified_packet_filename, out_arg_rev_fastq, out_unclassified_rev_fastq,
+            primer_workers)
+        return
 
         
     with open_maybe_gzip(fwd_fastq_filename, 'r') as fwd_file, \
@@ -286,6 +372,9 @@ def main():
     parser.add_argument("--max_mm_primer", type=int, default=4)
     parser.add_argument("--primer_start_num", type=int, default=42)
     parser.add_argument("--barcode_len", type=int, default=20)
+    parser.add_argument("--primer-workers", type=int, default=1, help="Primer-classification worker processes (default: 1)")
+    # 2026-09-04: Reject invalid worker counts before starting the pipeline.
+    # Reason: a non-positive process count cannot create a valid worker pool.
     # 2026-08-10: Route packet and derived R2 files to tmp by default.
     # Reason: these files are regenerable pipeline intermediates.
     parser.add_argument("--_16s_packet_filename", type=str, default="tmp/packets_16s")
@@ -295,6 +384,8 @@ def main():
     parser.add_argument("--unclassified_r2_fastq", type=str, default="tmp/unclassified_R2.fastq")
 
     args = parser.parse_args()
+    if args.primer_workers < 1:
+        parser.error("--primer-workers must be at least 1")
 
     # 2026-08-10: Materialize the organized output directories before writing files.
     # Reason: default tmp paths must work in a new result directory.
@@ -325,7 +416,7 @@ def main():
         args.kraken_output, args.kraken_report,
         args.barcode_len, args.max_shift_primer, args.max_mm_primer, args.primer_start_num,
         args._16s_packet_filename, args.arg_packet_filename, args.unclassified_packet_filename,
-        args.arg_r2_fastq, args.unclassified_r2_fastq
+        args.arg_r2_fastq, args.unclassified_r2_fastq, args.primer_workers
     )
 
 if __name__ == "__main__":
