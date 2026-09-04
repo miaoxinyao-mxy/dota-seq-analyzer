@@ -13,10 +13,6 @@ from pathlib import Path
 from .helper_functions import get_target_modes
 from .validate_inputs import check_reference_fasta
 
-# 2026-09-04: Use a fixed Kraken2 worker count alongside DoTA-Seq analysis workers.
-# Reason: -@ controls read analysis while Kraken2 remains internally configured.
-KRAKEN2_THREADS = 8
-
 
 def _run_step(name: str, command: list[str], output_dir: Path) -> None:
     """Run one pipeline stage and stop immediately if it fails."""
@@ -43,7 +39,7 @@ def main() -> None:
     parser.add_argument("-2", "--r2", required=True, help="R2 FASTQ file")
     parser.add_argument("-p", "--primers", required=True, help="DoTA-Seq primer CSV file")
     parser.add_argument("-o", "--output", required=True, help="Output directory")
-    parser.add_argument("-@", "--threads", dest="analysis_workers", type=int, default=1, metavar="INT", help="Number of parallel workers used by DoTA-seq analysis")
+    parser.add_argument("-@", "--threads", dest="analysis_workers", type=int, default=1, metavar="INT", help="Number of parallel workers/threads used by DoTA-seq analysis")
     parser.add_argument("--taxonomy-db", help="Extracted Kraken2 taxonomy database directory")
     # 2026-08-28: Expose the Stage 2 threshold in the public CLI.
     # Reason: users can control low-count taxon filtering without a separate skip flag.
@@ -138,7 +134,7 @@ def main() -> None:
             "--db",
             str(taxonomy_db),
             "--threads",
-            str(KRAKEN2_THREADS),
+            str(args.analysis_workers),
             "--paired",
             "tmp/kraken_R1.fastq",
             "tmp/kraken_R2.fastq",
