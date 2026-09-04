@@ -231,10 +231,10 @@ def main() -> None:
         ],
         output_dir,
     )
-    # 2026-08-28: Reconstruct every primer-defined target by default.
-    # Reason: all targets now use the same family-wise sequence analysis path;
-    # reference matching remains optional and is handled in the next stage.
-    sequence_command = [
+    # 2026-08-10: Reconstruct sequences only for requested PV or reference analyses.
+    # Reason: blank Mode targets require only cell-level detection.
+    if pv_requested or reference is not None:
+        sequence_command = [
             python,
             script("sub_arg_database_revised.py"),
             "--filtered_counts_summary_arg_tsv",
@@ -252,7 +252,14 @@ def main() -> None:
             "--filtered_sub_arg_barcode_summary_tsv",
             "reports/cell_target_matrix.tsv",
         ]
-    _run_step("Reconstruct target sequences", sequence_command, output_dir)
+        if reference is not None:
+            sequence_command.append("--include_all_targets")
+        _run_step("Reconstruct target sequences", sequence_command, output_dir)
+    else:
+        shutil.copyfile(
+            output_dir / "tmp/filtered_counts_summary_arg.tsv",
+            output_dir / "reports/cell_target_matrix.tsv",
+        )
 
     if pv_requested:
         pv_command = [
