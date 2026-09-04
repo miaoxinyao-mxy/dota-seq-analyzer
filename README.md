@@ -37,7 +37,7 @@ Leave `Mode` blank for standard target detection. Use `ssr` for phase-variation 
 dota-seq-analyzer -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results
 ```
 
-Primer classification is serial by default. Use `--primer-workers N` to classify read chunks with N worker processes; `--threads` remains the Kraken2 thread setting.
+Analysis is serial by default. For larger datasets, use `-@ N` or `--threads N` to parallelize read processing across CPU cores; 8 workers is a reasonable starting point on a multi-core workstation.
 
 To annotate reconstructed target sequences with a reference FASTA:
 
@@ -47,7 +47,7 @@ dota-seq-analyzer -1 reads1.fastq -2 reads2.fastq -p primers.csv -r reference.fa
 
 An optional AMR reference is included in `database/amr-reference-db.tar.gz`.
 
-Run `dota-seq-analyzer --help` for database overrides, the Kraken2 thread option, and filtering options. By default, taxa must be represented by at least 10 cells. Use `--min-cells-per-taxon 5` to retain taxa with at least five cells, `--min-cells-per-taxon 1` to retain every taxon represented after Stage 1, or `--min-cells-per-taxon 0` to disable Stage 2 taxonomy count filtering.
+Run `dota-seq-analyzer --help` for database overrides, parallel analysis, and filtering options. By default, taxa must be represented by at least 10 cells. Use `--min-cells-per-taxon 5` to retain taxa with at least five cells, `--min-cells-per-taxon 1` to retain every taxon represented after Stage 1, or `--min-cells-per-taxon 0` to disable Stage 2 taxonomy count filtering.
 
 ## Output
 

@@ -467,7 +467,7 @@ This coordinate choice is an explicit PI decision based on the requested unifica
 **Files changed**
 
 * `src/dota_seq_analyzer/create_ID_packets.py`: added ordered 2,048-read chunking, worker initialization, worker classification, and a main-process output path selected by `primer_workers > 1`.
-* `src/dota_seq_analyzer/cli.py`: added public `--primer-workers` (default 1), while `--threads` remains Kraken2-only.
+* `src/dota_seq_analyzer/cli.py`: added public `-@/--threads` (default 1) for DoTA-seq analysis workers; Kraken2 uses the internal fixed default.
 * `README.md`: documented the new option.
 * `tests/test_create_id_packets.py`: added a multiprocessing worker classification regression.
 
@@ -485,4 +485,4 @@ Workers only classify reads with the existing `determine_gene_revised()` and `ch
 
 **Recommendation**
 
-Use 8 primer workers for this 10,000-pair benchmark environment; 16 provided no additional benefit. The default remains 1 for conservative behavior. Each chunk is serialized to a worker and the classified records are serialized back; chunk size 2,048 limits task overhead.
+Use 8 DoTA-seq analysis workers for this 10,000-pair benchmark environment; 16 provided no additional benefit. The default remains 1 for conservative behavior. Each chunk is serialized to a worker and the classified records are serialized back; chunk size 2,048 limits task overhead.

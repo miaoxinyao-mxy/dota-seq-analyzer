@@ -13,6 +13,8 @@ from pathlib import Path
 from .helper_functions import get_target_modes
 from .validate_inputs import check_reference_fasta
 
+KRAKEN2_THREADS = 4
+
 
 def _run_step(name: str, command: list[str], output_dir: Path) -> None:
     """Run one pipeline stage and stop immediately if it fails."""
@@ -39,10 +41,7 @@ def main() -> None:
     parser.add_argument("-2", "--r2", required=True, help="R2 FASTQ file")
     parser.add_argument("-p", "--primers", required=True, help="DoTA-Seq primer CSV file")
     parser.add_argument("-o", "--output", required=True, help="Output directory")
-    parser.add_argument("--threads", type=int, default=4, help="Kraken2 threads (default: 4)")
-    # 2026-09-04: Expose independent primer worker processes.
-    # Reason: --threads remains reserved for Kraken2; primer classification is separately tunable.
-    parser.add_argument("--primer-workers", type=int, default=1, help="Primer-classification worker processes (default: 1)")
+    parser.add_argument("-@", "--threads", dest="analysis_workers", type=int, default=1, metavar="INT", help="Number of parallel workers used by DoTA-seq analysis")
     parser.add_argument("--taxonomy-db", help="Extracted Kraken2 taxonomy database directory")
     # 2026-08-28: Expose the Stage 2 threshold in the public CLI.
     # Reason: users can control low-count taxon filtering without a separate skip flag.
@@ -61,10 +60,8 @@ def main() -> None:
     for label, path in (("R1", r1), ("R2", r2), ("primer CSV", primers)):
         if not path.is_file():
             parser.error(f"{label} file not found: {path}")
-    if args.threads < 1:
+    if args.analysis_workers < 1:
         parser.error("--threads must be at least 1")
-    if args.primer_workers < 1:
-        parser.error("--primer-workers must be at least 1")
     if args.min_cells_per_taxon < 0:
         parser.error("--min-cells-per-taxon must be non-negative")
 
@@ -137,7 +134,7 @@ def main() -> None:
             "--db",
             str(taxonomy_db),
             "--threads",
-            str(args.threads),
+            str(KRAKEN2_THREADS),
             "--paired",
             "tmp/kraken_R1.fastq",
             "tmp/kraken_R2.fastq",
@@ -163,8 +160,8 @@ def main() -> None:
             "tmp/kraken.output",
             "--kraken_report",
             "tmp/kraken.report",
-            "--primer-workers",
-            str(args.primer_workers),
+            "--threads",
+            str(args.analysis_workers),
         ],
         output_dir,
     )
