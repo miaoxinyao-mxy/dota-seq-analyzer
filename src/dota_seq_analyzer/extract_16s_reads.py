@@ -5,7 +5,11 @@ import sys
 # Reason: the public CLI uses subprocess check=True to stop failed stages.
 from helper_functions import open_maybe_gzip, ensure_output_directories
 import argparse
+import multiprocessing
 import os
+
+EXTRACTION_CHUNK_SIZE = 2048
+_16S_WORKER_CONFIG = None
 
 def determine_16s_primers(primers_filename: str) -> Tuple[str, str]:
     """Obtain the R1 & R2 primers for the 16s gene"""
@@ -151,6 +155,97 @@ def check_primer_match_seq(
 
     return False
 
+
+def _initialize_16s_worker(fwd_primer, rev_primer, max_shift, max_mm, primer_start_num):
+    """Initialize invariant 16S matching data once per worker process."""
+    global _16S_WORKER_CONFIG
+    _16S_WORKER_CONFIG = (fwd_primer, rev_primer, max_shift, max_mm, primer_start_num)
+
+
+def _classify_16s_chunk(records):
+    """Classify one ordered chunk without writing output files."""
+    fwd_primer, rev_primer, max_shift, max_mm, primer_start_num = _16S_WORKER_CONFIG
+    decisions = [
+        check_primer_match_seq(f_seq, fwd_primer, max_shift, max_mm)
+        and check_primer_match_seq(r_seq, rev_primer, max_shift, max_mm, primer_start_num)
+        for _, _, f_seq, r_seq, _, _ in records
+    ]
+    return records, decisions
+
+
+def _read_16s_chunk(r1, r2, chunk_size):
+    """Read contiguous paired FASTQ records while preserving input order."""
+    records = []
+    for _ in range(chunk_size):
+        f_line = r1.readline()
+        r_line = r2.readline()
+        if f_line == "" or r_line == "":
+            break
+
+        id_f = f_line.strip()
+        id_r = r_line.strip()
+        assert id_f.split(" ")[0] == id_r.split(" ")[0]  # IDs should match
+        f_seq = r1.readline().strip()
+        r_seq = r2.readline().strip()
+        for _ in range(2):
+            f_quality = r1.readline().strip()
+            r_quality = r2.readline().strip()
+        records.append((id_f, id_r, f_seq, r_seq, f_quality, r_quality))
+    return records
+
+
+def _write_16s_record(record, is_16s, fwd_primer, rev_primer, primer_start_num,
+                      only_16s_r1, only_16s_r2, kraken_only_16s_r1, kraken_only_16s_r2):
+    """Write one already-classified record using the existing output format."""
+    if not is_16s:
+        return
+    id_f, id_r, f_seq, r_seq, f_quality, r_quality = record
+    only_16s_r1.write(f"{id_f}\n{f_seq}\n+\n{f_quality}\n")
+    only_16s_r2.write(f"{id_r}\n{r_seq}\n+\n{r_quality}\n")
+    trimmed_f_seq = f_seq[len(fwd_primer):]
+    trimmed_r_seq = r_seq[(primer_start_num + len(rev_primer)):]
+    trimmed_f_quality = f_quality[len(fwd_primer):]
+    trimmed_r_quality = r_quality[(primer_start_num + len(rev_primer)):]
+    kraken_only_16s_r1.write(f"{id_f}\n{trimmed_f_seq}\n+\n{trimmed_f_quality}\n")
+    kraken_only_16s_r2.write(f"{id_r}\n{trimmed_r_seq}\n+\n{trimmed_r_quality}\n")
+
+
+def _create_16s_only_fastq_parallel(
+    r1_filename, r2_filename, only_16s_r1_filename, only_16s_r2_filename,
+    kraken_only_16s_r1_filename, kraken_only_16s_r2_filename,
+    fwd_primer, rev_primer, max_shift, max_mm, primer_start_num, analysis_workers
+):
+    """Classify read chunks in workers; keep all output writing in the parent."""
+    with open_maybe_gzip(r1_filename, "rt") as r1, \
+         open_maybe_gzip(r2_filename, "rt") as r2, \
+         open(only_16s_r1_filename, "w") as only_16s_r1, \
+         open(only_16s_r2_filename, "w") as only_16s_r2, \
+         open(kraken_only_16s_r1_filename, "w") as kraken_only_16s_r1, \
+         open(kraken_only_16s_r2_filename, "w") as kraken_only_16s_r2:
+        def chunks():
+            while True:
+                records = _read_16s_chunk(r1, r2, EXTRACTION_CHUNK_SIZE)
+                if not records:
+                    return
+                yield records
+
+        with multiprocessing.Pool(
+            processes=analysis_workers,
+            initializer=_initialize_16s_worker,
+            initargs=(fwd_primer, rev_primer, max_shift, max_mm, primer_start_num),
+        ) as pool:
+            processed = 0
+            for records, decisions in pool.imap(_classify_16s_chunk, chunks()):
+                for record, is_16s in zip(records, decisions):
+                    _write_16s_record(
+                        record, is_16s, fwd_primer, rev_primer, primer_start_num,
+                        only_16s_r1, only_16s_r2, kraken_only_16s_r1, kraken_only_16s_r2,
+                    )
+                processed += len(records)
+                if processed % 1000 == 0:
+                    print(f"Processed {processed//1000},000 reads")
+
+
 def create_16s_only_fastq(
     r1_filename: str, r2_filename: str,
     only_16s_r1_filename: str, only_16s_r2_filename: str,
@@ -158,6 +253,7 @@ def create_16s_only_fastq(
     primers_filename: str,
     max_shift: int, max_mm: int,
     primer_start_num: int = 42,
+    analysis_workers: int = 1,
 ):
     """
     Extract reads whose fwd & rev sequences both contain 16s primers.
@@ -171,6 +267,17 @@ def create_16s_only_fastq(
 
     # determine forward & reverse 16s primers, by parsing through primers file
     fwd_primer, rev_primer = determine_16s_primers(primers_filename)
+
+    if analysis_workers < 1:
+        raise ValueError("analysis_workers must be at least 1")
+    # 2026-09-04: Parallelize only independent 16S primer decisions in chunks.
+    # Reason: reuse the existing analysis worker setting without changing matching semantics.
+    if analysis_workers > 1:
+        return _create_16s_only_fastq_parallel(
+            r1_filename, r2_filename, only_16s_r1_filename, only_16s_r2_filename,
+            kraken_only_16s_r1_filename, kraken_only_16s_r2_filename,
+            fwd_primer, rev_primer, max_shift, max_mm, primer_start_num, analysis_workers,
+        )
 
     # open files, both original (to read from) and new (to write to)
     with open_maybe_gzip(r1_filename, "rt") as r1, \
@@ -247,6 +354,7 @@ def main():
     parser.add_argument("--max_shift_primer", type=int, default=4)
     parser.add_argument("--max_mm_primer", type=int, default=4)
     parser.add_argument("--primer_start_num", type=int, default=42)
+    parser.add_argument("-@", "--threads", dest="analysis_workers", type=int, default=1, metavar="INT")
 
     args = parser.parse_args()
 
@@ -271,8 +379,8 @@ def main():
         args.r1_fastq, args.r2_fastq,
         args.r1_only_16s_fastq, args.r2_only_16s_fastq,
         args.kraken_r1_only_16s_fastq, args.kraken_r2_only_16s_fastq,
-        args.primers_filename, args.max_shift_primer, 
-        args.max_mm_primer, args.primer_start_num)
+        args.primers_filename, args.max_shift_primer,
+        args.max_mm_primer, args.primer_start_num, args.analysis_workers)
 
 if __name__ == "__main__":
     main()

@@ -124,6 +124,8 @@ def main() -> None:
             str(r2),
             "--primers_filename",
             str(primers),
+            "--threads",
+            str(args.analysis_workers),
         ],
         output_dir,
     )
