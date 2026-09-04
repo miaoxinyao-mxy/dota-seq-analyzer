@@ -82,7 +82,7 @@ def determine_gene_revised(
     f_seq: str, r_seq: str, 
     max_shift: int, max_mm: int, 
     primer_start_num: int, 
-    primers_to_genes_dict: Dict):
+    primers_to_genes_dict: Dict, primer_records=None):
 
     """Determines the gene for a given read, using a primer matching algorithm; output is either "16s", or a 1D matrix"""
 
@@ -99,11 +99,10 @@ def determine_gene_revised(
 
     # if no exact match, then use primer match algorithm to determine gene
 
-    for i in range(len(primers[1:])): # don't need to use header line
-        primer_line = primers[i+1]
-        parsed_primer_line = primer_line.strip().split(",")
-        fwd_primer = parsed_primer_line[1]
-        rev_primer = parsed_primer_line[2]
+    if primer_records is None:
+        primer_records = make_primer_records(primers)
+
+    for i, (fwd_primer, rev_primer, _) in enumerate(primer_records):
 
         # if both R1 and R2 primers match, then assign this read's gene accordingly
         if check_primer_match_seq(r_seq, rev_primer, max_shift, max_mm, primer_start_num) \
@@ -116,6 +115,21 @@ def determine_gene_revised(
             break # matching primer already found, so exit loop
 
     return gene
+
+def make_primer_records(primers):
+    """Parse primer rows once while preserving their original order."""
+    primer_records = []
+    for i, primer_line in enumerate(primers[1:]):
+        parsed_primer_line = primer_line.strip().split(",")
+        fwd_primer = parsed_primer_line[1]
+        rev_primer = parsed_primer_line[2]
+        gene = [0] * max(0, len(primers) - 2)
+        if i == 0:
+            gene = "16s"
+        else:
+            gene[i - 1] = 1
+        primer_records.append((fwd_primer, rev_primer, gene))
+    return primer_records
 
 def make_primers_to_genes_dict(primers):
     """
@@ -177,7 +191,11 @@ def generate_packets(
     tax_nodes_lists = create_taxonomy_tree(report_filename)
     with open(primers_filename, 'r') as primers_file: # csv file
         primers = primers_file.readlines()
+    # 2026-09-04: Parse primer rows once before processing reads.
+    # Reason: primer strings and gene mappings are invariant across reads.
+    primer_records = make_primer_records(primers)
     primers_to_genes_dict = make_primers_to_genes_dict(primers)
+    unmatched_gene = [0] * max(0, len(primers) - 2)
 
         
     with open_maybe_gzip(fwd_fastq_filename, 'r') as fwd_file, \
@@ -216,7 +234,7 @@ def generate_packets(
 
             # assign values for read ID basic info
             barcode = r_seq[0:barcode_len]
-            gene = determine_gene_revised(primers, f_seq, r_seq, max_shift, max_mm, primer_start_num, primers_to_genes_dict)
+            gene = determine_gene_revised(primers, f_seq, r_seq, max_shift, max_mm, primer_start_num, primers_to_genes_dict, primer_records)
             taxonomy = None
             
             # create packet and append to appropriate list, based on general group of gene
@@ -237,7 +255,7 @@ def generate_packets(
 
             # 2026-08-10: Derive the unmatched vector from the input primer panel.
             # Reason: both vector content and length must match the supplied number of ARG targets.
-            elif gene == [0] * max(0, len(primers) - 2):
+            elif gene == unmatched_gene:
                 out_unclassified_packet_file.write(format_packet(id_f, barcode, gene, taxonomy) + "\n")
                 out_unclassified_rev_fastq_file.write(f"{id_r_unparsed}\n{r_seq}\n+\n{r_quality}\n")
 
