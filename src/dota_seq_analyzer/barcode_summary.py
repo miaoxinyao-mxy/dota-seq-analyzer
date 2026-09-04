@@ -108,7 +108,9 @@ def _write_barcode_summary_parallel(
 
     df = pd.DataFrame.from_dict(rows, orient="index", columns=find_column_names(primers_filename))
     df.to_csv(unfiltered_tsv_filename, sep="\t", index_label="Barcode")
-    filter_barcodes_in_df(df, min_16s_reads, max_contam, min_barcodes=min_barcodes)
+    # 2026-09-04: Use the returned filtered DataFrame explicitly.
+    # Reason: vectorized filtering no longer reconstructs the input object in place.
+    df = filter_barcodes_in_df(df, min_16s_reads, max_contam, min_barcodes=min_barcodes)
     df.to_csv(tsv_filename, sep="\t", index_label="Barcode")
 
 
@@ -172,7 +174,9 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
         df = pd.DataFrame.from_dict(rows, orient="index", columns=find_column_names(primers_filename))
         # filter barcodes, and write barcode summary to tsv
         df.to_csv(unfiltered_tsv_filename, sep = "\t", index_label = "Barcode")
-        filter_barcodes_in_df(df, min_16s_reads, max_contam, min_barcodes=min_barcodes) # filter barcodes
+        # 2026-09-04: Use the returned filtered DataFrame explicitly.
+        # Reason: vectorized filtering returns a new frame instead of mutating row-by-row.
+        df = filter_barcodes_in_df(df, min_16s_reads, max_contam, min_barcodes=min_barcodes) # filter barcodes
         df.to_csv(tsv_filename, sep = "\t", index_label = "Barcode")
 
 def find_column_names(primers_filename):

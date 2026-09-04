@@ -462,6 +462,45 @@ Both analyses extract the same paired-read region. Output formats, clustering lo
 This coordinate choice is an explicit PI decision based on the requested unification; no independent experimental-coordinate validation was performed.
 
 
+
+
+## Vectorized barcode filtering — 2026-09-04
+
+**Handoff item / issue**
+
+The current barcode filter used row-wise pandas `.loc` access and repeated `drop()` calls. The intended filtering rules were inherited from the original awk workflow and must remain unchanged.
+
+**Files/functions changed**
+
+* `src/dota_seq_analyzer/filter_barcodes.py::filter_barcodes_in_df()`
+* `src/dota_seq_analyzer/barcode_summary.py::write_barcode_summary_to_tsv()` and `_write_barcode_summary_parallel()`
+
+**Behavior before**
+
+Stage 1 iterated over barcode rows and dropped rows individually. Stage 2 sorted by `Predicted taxonomy`, then iterated through taxon groups and dropped each low-count barcode individually. The function mutated its input DataFrame because callers ignored a return value.
+
+**Behavior after**
+
+Stage 1 uses one vectorized mask preserving `<= min_16s_reads`, `>= max_contam`, and the existing unclassified-taxonomy substring rule. Klebsiella normalization remains after Stage 1 and preserves the first matching genus onward rewrite. Stage 2 preserves the existing taxonomy sort and uses `groupby(...).transform("size")`. `min_barcodes == 0` still disables Stage 2. The function returns the filtered DataFrame, and both callers now assign the return value.
+
+**Validation**
+
+* `python -m py_compile src/dota_seq_analyzer/filter_barcodes.py src/dota_seq_analyzer/barcode_summary.py`: PASS.
+* Old committed implementation versus new implementation on test01: 327 rows and 28 columns, retained IDs/taxonomy/columns/order equivalent.
+* Serialized filtered TSV: byte-for-byte equivalent.
+* Synthetic threshold checks for 0, 1, 2, and 10: equivalent. Negative threshold rejection: PASS.
+* Test01 benchmark: old 14.2433 s; new 0.0085 s; 1,672.57x speedup; 99.9% runtime reduction.
+* Existing pytest suite could not run because `pytest` is not declared/installed in the project environment; no unlisted dependency was installed.
+
+**Changes made**
+
+The filter implementation and its two callers only. No awk script was copied directly because the original awk consumes the older MLE block format, not the current barcode-summary TSV.
+
+**Assumptions / unverified points**
+
+The test01 summary is representative for filtering performance but not a production-scale benchmark. Full pytest validation remains pending a project-declared test dependency or an approved test runner.
+
+
 ## Read-level primer multiprocessing — 2026-09-04
 
 **Files changed**
