@@ -63,49 +63,73 @@ def extract_b_with_ids_single(
             for _ in range(3): # account for 4-line fastq format
                 line = f.readline()
 
+def _dominant_index_keys(barcode: str, max_shift: int):
+    """Return exact/prefix/suffix signatures for one dominant barcode."""
+    keys = {(len(barcode), "exact", barcode)}
+    for shift in range(1, max_shift + 1):
+        if shift >= len(barcode):
+            continue
+        keys.add((len(barcode), "suffix", barcode[shift:]))
+        keys.add((len(barcode), "prefix", barcode[:-shift]))
+    return keys
+
+def _candidate_index_keys(barcode: str, max_shift: int):
+    """Return signatures that can identify a matching dominant barcode."""
+    keys = {(len(barcode), "exact", barcode)}
+    for shift in range(1, max_shift + 1):
+        if shift >= len(barcode):
+            continue
+        keys.add((len(barcode), "suffix", barcode[:-shift]))
+        keys.add((len(barcode), "prefix", barcode[shift:]))
+    return keys
+
+def _merge_barcode_ids(clustered_b_with_ids, all_b_with_ids, bc_s, bc_d):
+    """Merge one observed barcode into an existing dominant barcode."""
+    for i in range(len(clustered_b_with_ids[bc_d])):
+        clustered_b_with_ids[bc_d][i].extend(all_b_with_ids[bc_s][i])
+
 def create_clustered_b_with_ids(
     bcs_with_counts: Counter, all_b_with_ids: Dict, 
     max_shift: int = 1) -> Dict[str, List]:
-    """
-    Cluster similar barcodes, to account for sequencing errors.
-    Return the modified dictionary matching now-clustered barcodes with all their corresponding read IDs.
-    """
+    """Cluster barcodes while preserving the original first-match behavior."""
 
     print("Creating 'whitelist' of dominant barcodes, and hence forming barcode clusters.")
     print("Also adding IDs to their matching barcode clusters...")
 
-    # preliminary steps
-    sorted_bcs = [k for k, v in bcs_with_counts.most_common()] # sort barcodes by bargroup size
-    clustered_b_with_ids = {} # same as all_b_with_ids, except that keys will only be dominant barcodes (not all extracted barcodes)
+    sorted_bcs = [k for k, v in bcs_with_counts.most_common()]
+    clustered_b_with_ids = {}
 
-    # Iterate through all barcodes, where this barcode list has been sorted by bargroup size (i.e. from barcodes with the most # of reads, to least # of reads).
-    # Reason: Dominant barcodes are identified as we go through this list - hence more dominant barcodes will be identified near the start of the list.
-    #         Note that the dominant barcodes are the sequences representing their respective barcode clusters.
-    #         We want the dominant barcodes to be the most common sequence in their respective clusters - combined with the fact that more dominant barcodes
-    #         will be identified near the list's beginning, this is why we must sort the barcode list by size before iterating through it.
+    # 2026-09-04: Index only safe equal-length barcode comparisons.
+    # Reason: retain the unchanged matcher while avoiding an O(n^2) candidate scan.
+    barcode_lengths = {len(barcode) for barcode in sorted_bcs}
+    use_index = (
+        len(barcode_lengths) <= 1
+        and max_shift >= 0
+        and (not barcode_lengths or max_shift < min(barcode_lengths))
+    )
+    dominant_index = {}
+    dominant_order = {}
+
     for bc_s in sorted_bcs:
-        in_dominant_bcs = False
-        
-        # iterate through all dominant barcodes identified so far
-        for bc_d in clustered_b_with_ids: 
-            
-            # if current barcode can be clustered with one of the dominant barcodes, then merge their read IDs lists
-            if check_barcodes_match_revised(bc_s, bc_d, max_shift):
-                in_dominant_bcs = True
-                # merge the 16s, arg, & unclassified ID lists for that barcode cluster
-                for i in range(len(clustered_b_with_ids[bc_d])):
-                    clustered_b_with_ids[bc_d][i].extend(all_b_with_ids[bc_s][i])
-                bc_added = True
-                break # similar barcode already in dominant barcodes list
-                
-        # if current barcode cannot be clustered with any dominant barcode, 
-        # then add it to clustered_b_with_ids as a new dominant barcode
-        if not in_dominant_bcs:
-            clustered_b_with_ids[bc_s] = all_b_with_ids[bc_s]
-            bc_added = True
+        if use_index:
+            candidate_bcs = set()
+            for key in _candidate_index_keys(bc_s, max_shift):
+                candidate_bcs.update(dominant_index.get(key, ()))
+            candidates = sorted(candidate_bcs, key=dominant_order.__getitem__)
+        else:
+            # Preserve legacy behavior for unexpected lengths or shift values.
+            candidates = list(clustered_b_with_ids)
 
-        # barcode should have been added to clustered_b_with_ids already; if not, return error
-        assert bc_added == True, f"Barcode {bc_s} not matched to any barcode in the dominant barcodes whitelist"
+        for bc_d in candidates:
+            if check_barcodes_match_revised(bc_s, bc_d, max_shift):
+                _merge_barcode_ids(clustered_b_with_ids, all_b_with_ids, bc_s, bc_d)
+                break
+        else:
+            clustered_b_with_ids[bc_s] = all_b_with_ids[bc_s]
+            dominant_order[bc_s] = len(dominant_order)
+            if use_index:
+                for key in _dominant_index_keys(bc_s, max_shift):
+                    dominant_index.setdefault(key, []).append(bc_s)
 
     return clustered_b_with_ids
 
