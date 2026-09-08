@@ -141,11 +141,29 @@ def read_16s_revised(fwd_16s_fastq: str, rev_16s_fastq: str) -> Dict[str, List[s
     return _16s_reads
     
 
-def extract_core(r1, r2):
+def read_16s_primer_starts(manifest_filename: str) -> Dict[str, int]:
+    """Load the detected 16S R1 primer start for each accepted read ID."""
+    starts = {}
+    with open(manifest_filename, "r") as manifest:
+        header = manifest.readline().rstrip("\n")
+        expected = "read_index\tread_id\tr1_primer_start"
+        if header != expected:
+            raise ValueError(f"Invalid 16S manifest header: {header!r}")
+        for line in manifest:
+            _, read_id, primer_start = line.rstrip("\n").split("\t")
+            starts[read_id] = int(primer_start)
+    return starts
+
+
+def extract_core(r1, r2, r1_primer_start=0):
     """Slices and concatenates the predefined hypervariable core regions from R1 and R2."""
-    if len(r1) < R1_END or len(r2) < R2_END:
+    # 2026-09-08: Offset only the 16S R1 core by its detected stagger length.
+    # Reason: R2 and target-read coordinates are not staggered.
+    r1_start = R1_START + r1_primer_start
+    r1_end = R1_END + r1_primer_start
+    if len(r1) < r1_end or len(r2) < R2_END:
         return None
-    return r1[R1_START:R1_END] + "|" + r2[R2_START:R2_END]
+    return r1[r1_start:r1_end] + "|" + r2[R2_START:R2_END]
 
 
 # =====================================================================
@@ -253,7 +271,7 @@ def summarize_barcode(core_counter):
 # =====================================================================
 def conduct_asv_typing(
     barcode_summary_tsv_filename: str, b_with_ids_filename: str,
-    fwd_16s_fastq: str, rev_16s_fastq: str,
+    fwd_16s_fastq: str, rev_16s_fastq: str, r1_16s_manifest: str,
     asv_barcode_summary_tsv_filename: str, global_asv_tsv_filename: str,
     primers_file: str, filter_corrupted: bool = False
     ):
@@ -263,6 +281,7 @@ def conduct_asv_typing(
     final_barcodes = read_final_barcodes(barcode_summary_tsv_filename)
     bc_to_ids = read_b_with_ids(b_with_ids_filename)
     _16s_reads = read_16s_revised(fwd_16s_fastq, rev_16s_fastq)
+    r1_primer_starts = read_16s_primer_starts(r1_16s_manifest)
 
     # run ASV typing for each cell
     barcode_summary = {}
@@ -270,7 +289,10 @@ def conduct_asv_typing(
     for bc in final_barcodes:
         core_counter = Counter()
         for rid in bc_to_ids.get(bc, []):
-            core = extract_core(_16s_reads[rid][0], _16s_reads[rid][1])
+            if rid not in r1_primer_starts:
+                raise ValueError(f"16S read missing from primer-start manifest: {rid}")
+            core = extract_core(
+                _16s_reads[rid][0], _16s_reads[rid][1], r1_primer_starts[rid])
             if core is None:
                 continue
             core_counter[core] += 1
@@ -455,6 +477,7 @@ def main():
     # Reason: sequencing inputs are named R1 and R2, not forward/reverse.
     parser.add_argument("--r1_16s_fastq", type=str, required=True)
     parser.add_argument("--r2_16s_fastq", type=str, required=True)
+    parser.add_argument("--r1_16s_manifest", type=str, required=True)
     # 2026-08-10: Route sequence-variant tables to tmp by default.
     # Reason: these tables support taxonomic assignment but are not the primary result.
     parser.add_argument("--asv_barcode_summary_tsv", type=str, default = "tmp/asv_barcode_summary.tsv")
@@ -483,14 +506,17 @@ def main():
     if not os.path.exists(args.r2_16s_fastq):
         print(f"❌ Error: input file not found: {args.r2_16s_fastq}")
         sys.exit(1)
+    if not os.path.exists(args.r1_16s_manifest):
+        print(f"❌ Error: input file not found: {args.r1_16s_manifest}")
+        sys.exit(1)
     if not os.path.exists(args.primers_file):
         print(f"❌ Error: input file not found: {args.primers_file}")
         sys.exit(1)
 
     conduct_asv_typing(
         args.barcode_summary_tsv, args.b_with_ids,
-        args.r1_16s_fastq, args.r2_16s_fastq,
-        args.asv_barcode_summary_tsv, args.global_asv_tsv, 
+        args.r1_16s_fastq, args.r2_16s_fastq, args.r1_16s_manifest,
+        args.asv_barcode_summary_tsv, args.global_asv_tsv,
         args.primers_file, args.filter_corrupted
     )
 

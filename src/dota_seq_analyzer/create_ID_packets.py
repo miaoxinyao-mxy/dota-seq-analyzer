@@ -85,8 +85,8 @@ def determine_gene_revised(
     primers: List[str], 
     f_seq: str, r_seq: str, 
     max_shift: int, max_mm: int, 
-    primer_start_num: int, 
-    primers_to_genes_dict: Dict, primer_records=None):
+    primer_start_num: int,
+    primers_to_genes_dict: Dict, primer_records=None, skip_16s: bool = False):
 
     """Determines the gene for a given read, using a primer matching algorithm; output is either "16s", or a 1D matrix"""
 
@@ -96,6 +96,8 @@ def determine_gene_revised(
 
     # first check for exact primer match
     for fwd_primer, rev_primer in primers_to_genes_dict:
+        if skip_16s and primers_to_genes_dict[(fwd_primer, rev_primer)] == "16s":
+            continue
         # 2026-08-10: Offset the R2 slice end by the expected primer start.
         # Reason: using len(rev_primer) as an absolute endpoint produces an empty or truncated exact-match slice.
         if rev_primer == r_seq[primer_start_num : primer_start_num + len(rev_primer)] and fwd_primer == f_seq[0 : len(fwd_primer)]:
@@ -107,6 +109,8 @@ def determine_gene_revised(
         primer_records = make_primer_records(primers)
 
     for i, (fwd_primer, rev_primer, _) in enumerate(primer_records):
+        if skip_16s and i == 0:
+            continue
 
         # if both R1 and R2 primers match, then assign this read's gene accordingly
         if check_primer_match_seq(r_seq, rev_primer, max_shift, max_mm, primer_start_num) \
@@ -177,6 +181,48 @@ def format_packet(id, barcode, gene, taxonomy):
     })
 
 
+class Ordered16SManifest:
+    """Stream ordered 16S identities and primer starts alongside the source FASTQ."""
+
+    def __init__(self, manifest_file):
+        header = manifest_file.readline().rstrip("\n")
+        expected = "read_index\tread_id\tr1_primer_start"
+        if header != expected:
+            raise ValueError(f"Invalid 16S manifest header: {header!r}")
+        self.manifest_file = manifest_file
+        self.next_entry = self._read_entry()
+
+    def _read_entry(self):
+        line = self.manifest_file.readline()
+        if line == "":
+            return None
+        fields = line.rstrip("\n").split("\t")
+        if len(fields) != 3:
+            raise ValueError(f"Invalid 16S manifest row: {line.rstrip()!r}")
+        return int(fields[0]), fields[1], int(fields[2])
+
+    def consume_for_read(self, read_index, read_id):
+        if self.next_entry is None:
+            return None
+        manifest_index, manifest_id, primer_start = self.next_entry
+        if manifest_index < read_index:
+            raise ValueError(
+                f"16S manifest entry {manifest_id} at index {manifest_index} "
+                f"was not found in the FASTQ")
+        if manifest_index != read_index:
+            return None
+        if manifest_id != read_id:
+            raise ValueError(
+                f"16S manifest/FASTQ ID mismatch at read {read_index}: "
+                f"{manifest_id!r} != {read_id!r}")
+        self.next_entry = self._read_entry()
+        return primer_start
+
+    def assert_finished(self):
+        if self.next_entry is not None:
+            raise ValueError("16S manifest contains reads not found in the FASTQ")
+
+
 def _initialize_primer_worker(primers, primers_to_genes_dict, primer_records, max_shift, max_mm, primer_start_num):
     global _PRIMER_WORKER_CONFIG
     _PRIMER_WORKER_CONFIG = (primers, primers_to_genes_dict, primer_records, max_shift, max_mm, primer_start_num)
@@ -187,12 +233,21 @@ def _classify_primer_chunk(index_and_records):
     primers, primers_to_genes_dict, primer_records, max_shift, max_mm, primer_start_num = _PRIMER_WORKER_CONFIG
     classified = []
     for record in records:
-        gene = determine_gene_revised(primers, record[4], record[5], max_shift, max_mm, primer_start_num, primers_to_genes_dict, primer_records)
+        if len(record) == 8:
+            known_16s = record[7]
+            gene = "16s" if known_16s else determine_gene_revised(
+                primers, record[4], record[5], max_shift, max_mm,
+                primer_start_num, primers_to_genes_dict, primer_records,
+                skip_16s=True)
+        else:
+            gene = determine_gene_revised(
+                primers, record[4], record[5], max_shift, max_mm,
+                primer_start_num, primers_to_genes_dict, primer_records)
         classified.append((record, gene))
     return chunk_index, classified
 
 
-def _read_primer_chunks(fwd_file, rev_file, chunk_size=PRIMER_CHUNK_SIZE):
+def _read_primer_chunks(fwd_file, rev_file, manifest, chunk_size=PRIMER_CHUNK_SIZE):
     i = 0
     f_line = fwd_file.readline()
     r_line = rev_file.readline()
@@ -210,27 +265,33 @@ def _read_primer_chunks(fwd_file, rev_file, chunk_size=PRIMER_CHUNK_SIZE):
             rev_file.readline()
             fwd_file.readline()
             r_quality = rev_file.readline().strip()
-            records.append((i, id_f_unparsed, id_r_unparsed, id_f, f_seq, r_seq, r_quality))
+            r1_16s_primer_start = manifest.consume_for_read(i, id_f)
+            records.append((
+                i, id_f_unparsed, id_r_unparsed, id_f, f_seq, r_seq,
+                r_quality, r1_16s_primer_start is not None))
             f_line = fwd_file.readline()
             r_line = rev_file.readline()
             i += 1
         yield records
+    manifest.assert_finished()
 
 
 def _generate_packets_parallel(
-    fwd_fastq_filename, rev_fastq_filename, kraken_output_filename, tax_nodes_lists,
+    fwd_fastq_filename, rev_fastq_filename, manifest_filename,
+    kraken_output_filename, tax_nodes_lists,
     primers, primers_to_genes_dict, primer_records, barcode_len, max_shift, max_mm,
     primer_start_num, out_16s_packet_filename, out_arg_packet_filename,
     out_unclassified_packet_filename, out_arg_rev_fastq, out_unclassified_rev_fastq,
     analysis_workers):
     unmatched_gene = [0] * max(0, len(primers) - 2)
-    with open_maybe_gzip(fwd_fastq_filename, "r") as fwd_file, open_maybe_gzip(rev_fastq_filename, "r") as rev_file, open(kraken_output_filename, "r") as taxonomy_file, open(out_16s_packet_filename, "w") as out_16s_packet_file, open(out_unclassified_packet_filename, "w") as out_unclassified_packet_file, open(out_arg_packet_filename, "w") as out_arg_packet_file, open(out_arg_rev_fastq, "w") as out_arg_rev_fastq_file, open(out_unclassified_rev_fastq, "w") as out_unclassified_rev_fastq_file:
+    with open_maybe_gzip(fwd_fastq_filename, "r") as fwd_file, open_maybe_gzip(rev_fastq_filename, "r") as rev_file, open(manifest_filename, "r") as manifest_file, open(kraken_output_filename, "r") as taxonomy_file, open(out_16s_packet_filename, "w") as out_16s_packet_file, open(out_unclassified_packet_filename, "w") as out_unclassified_packet_file, open(out_arg_packet_filename, "w") as out_arg_packet_file, open(out_arg_rev_fastq, "w") as out_arg_rev_fastq_file, open(out_unclassified_rev_fastq, "w") as out_unclassified_rev_fastq_file:
         t_line = taxonomy_file.readline()
-        chunks = enumerate(_read_primer_chunks(fwd_file, rev_file))
+        manifest = Ordered16SManifest(manifest_file)
+        chunks = enumerate(_read_primer_chunks(fwd_file, rev_file, manifest))
         with multiprocessing.Pool(processes=analysis_workers, initializer=_initialize_primer_worker, initargs=(primers, primers_to_genes_dict, primer_records, max_shift, max_mm, primer_start_num)) as pool:
             for _, classified in pool.imap(_classify_primer_chunk, chunks):
                 for record, gene in classified:
-                    i, id_f_unparsed, id_r_unparsed, id_f, f_seq, r_seq, r_quality = record
+                    i, id_f_unparsed, id_r_unparsed, id_f, f_seq, r_seq, r_quality, _ = record
                     barcode = r_seq[0:barcode_len]
                     taxonomy = None
                     if gene == "16s":
@@ -250,8 +311,8 @@ def _generate_packets_parallel(
 
 
 def generate_packets(
-    fwd_fastq_filename: str, rev_fastq_filename: str, primers_filename: str, 
-    kraken_output_filename: str, report_filename: str,
+    fwd_fastq_filename: str, rev_fastq_filename: str, primers_filename: str,
+    manifest_filename: str, kraken_output_filename: str, report_filename: str,
     barcode_len: int, max_shift: int, max_mm: int, primer_start_num: int,
     out_16s_packet_filename: str, out_arg_packet_filename: str, out_unclassified_packet_filename: str,
     out_arg_rev_fastq: str, out_unclassified_rev_fastq: str, analysis_workers: int = 1
@@ -276,7 +337,8 @@ def generate_packets(
         raise ValueError("analysis_workers must be at least 1")
     if analysis_workers > 1:
         _generate_packets_parallel(
-            fwd_fastq_filename, rev_fastq_filename, kraken_output_filename, tax_nodes_lists,
+            fwd_fastq_filename, rev_fastq_filename, manifest_filename,
+            kraken_output_filename, tax_nodes_lists,
             primers, primers_to_genes_dict, primer_records, barcode_len, max_shift, max_mm,
             primer_start_num, out_16s_packet_filename, out_arg_packet_filename,
             out_unclassified_packet_filename, out_arg_rev_fastq, out_unclassified_rev_fastq,
@@ -286,6 +348,7 @@ def generate_packets(
         
     with open_maybe_gzip(fwd_fastq_filename, 'r') as fwd_file, \
     open_maybe_gzip(rev_fastq_filename, 'r') as rev_file, \
+    open(manifest_filename, 'r') as manifest_file, \
     open(kraken_output_filename, 'r') as taxonomy_file, \
     open(out_16s_packet_filename, 'w') as out_16s_packet_file, \
     open(out_unclassified_packet_filename, 'w') as out_unclassified_packet_file, \
@@ -298,6 +361,7 @@ def generate_packets(
         f_line = fwd_file.readline()
         r_line = rev_file.readline()
         t_line = taxonomy_file.readline()
+        manifest = Ordered16SManifest(manifest_file)
 
         # iterate through all lines in the fastq files
         while (f_line != "") and (r_line != ""):
@@ -320,7 +384,10 @@ def generate_packets(
 
             # assign values for read ID basic info
             barcode = r_seq[0:barcode_len]
-            gene = determine_gene_revised(primers, f_seq, r_seq, max_shift, max_mm, primer_start_num, primers_to_genes_dict, primer_records)
+            known_16s = manifest.consume_for_read(i, id_f) is not None
+            gene = "16s" if known_16s else determine_gene_revised(
+                primers, f_seq, r_seq, max_shift, max_mm, primer_start_num,
+                primers_to_genes_dict, primer_records, skip_16s=True)
             taxonomy = None
             
             # create packet and append to appropriate list, based on general group of gene
@@ -356,7 +423,8 @@ def generate_packets(
             i += 1
             if i % 1000 == 0:
                 print(f"Processed {i//1000},000 reads")
-    
+        manifest.assert_finished()
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -366,6 +434,7 @@ def main():
     parser.add_argument("--r1_fastq", type=str, required=True)
     parser.add_argument("--r2_fastq", type=str, required=True)
     parser.add_argument("--primers_filename", type=str, required=True)
+    parser.add_argument("--r1_16s_manifest", type=str, required=True)
     parser.add_argument("--kraken_output", type=str, required=True)
     parser.add_argument("--kraken_report", type=str, required=True)
     parser.add_argument("--max_shift_primer", type=int, default=4)
@@ -404,6 +473,9 @@ def main():
     if not os.path.exists(args.primers_filename):
         print(f"❌ Error: input file not found: {args.primers_filename}")
         sys.exit(1)
+    if not os.path.exists(args.r1_16s_manifest):
+        print(f"❌ Error: input file not found: {args.r1_16s_manifest}")
+        sys.exit(1)
     if not os.path.exists(args.kraken_output):
         print(f"❌ Error: input file not found: {args.kraken_output}")
         sys.exit(1)
@@ -413,7 +485,7 @@ def main():
 
     generate_packets(
         args.r1_fastq, args.r2_fastq, args.primers_filename,
-        args.kraken_output, args.kraken_report,
+        args.r1_16s_manifest, args.kraken_output, args.kraken_report,
         args.barcode_len, args.max_shift_primer, args.max_mm_primer, args.primer_start_num,
         args._16s_packet_filename, args.arg_packet_filename, args.unclassified_packet_filename,
         args.arg_r2_fastq, args.unclassified_r2_fastq, args.analysis_workers

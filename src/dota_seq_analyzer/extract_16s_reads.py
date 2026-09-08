@@ -10,6 +10,9 @@ import os
 
 EXTRACTION_CHUNK_SIZE = 2048
 _16S_WORKER_CONFIG = None
+# 2026-09-08: Support any 0–9 bp 16S R1 random-base stagger by default.
+# Reason: the public pipeline should not require one laboratory's stagger panel.
+VALID_16S_R1_STARTS = tuple(range(10))
 
 def determine_16s_primers(primers_filename: str) -> Tuple[str, str]:
     """Obtain the R1 & R2 primers for the 16s gene"""
@@ -156,6 +159,46 @@ def check_primer_match_seq(
     return False
 
 
+def _primer_distance_at_start(
+    seq: str, primer: str, start: int, max_mm: int,
+    max_indel: Optional[int] = None,
+) -> Optional[int]:
+    """Return the best accepted primer edit distance at one exact R1 start."""
+    seq = seq.strip().upper()
+    primer = primer.strip().upper()
+    if not seq or not primer or start < 0 or start >= len(seq):
+        return None
+    if max_indel is None:
+        max_indel = min(max_mm, 2)
+
+    min_window_len = max(1, len(primer) - max_indel)
+    max_window_len = min(len(seq) - start, len(primer) + max_indel)
+    best = None
+    for window_len in range(min_window_len, max_window_len + 1):
+        distance = bounded_edit_distance(
+            primer, seq[start:start + window_len], max_mm)
+        if distance <= max_mm and (best is None or distance < best):
+            best = distance
+    return best
+
+
+def find_16s_r1_primer_start(
+    seq: str, primer: str, max_mm: int,
+    valid_starts=VALID_16S_R1_STARTS,
+) -> Optional[int]:
+    """Find the best 16S-F start among the supported stagger positions."""
+    # 2026-09-08: Score every valid design and select the lowest-edit match.
+    # Reason: a boolean first hit cannot recover the coordinate needed downstream.
+    candidates = []
+    for order, start in enumerate(valid_starts):
+        distance = _primer_distance_at_start(seq, primer, start, max_mm)
+        if distance is not None:
+            candidates.append((distance, order, start))
+    if not candidates:
+        return None
+    return min(candidates)[2]
+
+
 def _initialize_16s_worker(fwd_primer, rev_primer, max_shift, max_mm, primer_start_num):
     """Initialize invariant 16S matching data once per worker process."""
     global _16S_WORKER_CONFIG
@@ -165,15 +208,17 @@ def _initialize_16s_worker(fwd_primer, rev_primer, max_shift, max_mm, primer_sta
 def _classify_16s_chunk(records):
     """Classify one ordered chunk without writing output files."""
     fwd_primer, rev_primer, max_shift, max_mm, primer_start_num = _16S_WORKER_CONFIG
-    decisions = [
-        check_primer_match_seq(f_seq, fwd_primer, max_shift, max_mm)
-        and check_primer_match_seq(r_seq, rev_primer, max_shift, max_mm, primer_start_num)
-        for _, _, f_seq, r_seq, _, _ in records
-    ]
-    return records, decisions
+    primer_starts = []
+    for _, _, _, f_seq, r_seq, _, _ in records:
+        primer_start = find_16s_r1_primer_start(f_seq, fwd_primer, max_mm)
+        if primer_start is not None and not check_primer_match_seq(
+            r_seq, rev_primer, max_shift, max_mm, primer_start_num):
+            primer_start = None
+        primer_starts.append(primer_start)
+    return records, primer_starts
 
 
-def _read_16s_chunk(r1, r2, chunk_size):
+def _read_16s_chunk(r1, r2, chunk_size, first_index):
     """Read contiguous paired FASTQ records while preserving input order."""
     records = []
     for _ in range(chunk_size):
@@ -190,30 +235,35 @@ def _read_16s_chunk(r1, r2, chunk_size):
         for _ in range(2):
             f_quality = r1.readline().strip()
             r_quality = r2.readline().strip()
-        records.append((id_f, id_r, f_seq, r_seq, f_quality, r_quality))
+        records.append((first_index + len(records), id_f, id_r, f_seq, r_seq, f_quality, r_quality))
     return records
 
 
-def _write_16s_record(record, is_16s, fwd_primer, rev_primer, primer_start_num,
-                      only_16s_r1, only_16s_r2, kraken_only_16s_r1, kraken_only_16s_r2):
+def _write_16s_record(record, primer_start, fwd_primer, rev_primer, primer_start_num,
+                      only_16s_r1, only_16s_r2, kraken_only_16s_r1, kraken_only_16s_r2,
+                      manifest):
     """Write one already-classified record using the existing output format."""
-    if not is_16s:
+    if primer_start is None:
         return
-    id_f, id_r, f_seq, r_seq, f_quality, r_quality = record
+    read_index, id_f, id_r, f_seq, r_seq, f_quality, r_quality = record
     only_16s_r1.write(f"{id_f}\n{f_seq}\n+\n{f_quality}\n")
     only_16s_r2.write(f"{id_r}\n{r_seq}\n+\n{r_quality}\n")
-    trimmed_f_seq = f_seq[len(fwd_primer):]
+    trim_start = primer_start + len(fwd_primer)
+    trimmed_f_seq = f_seq[trim_start:]
     trimmed_r_seq = r_seq[(primer_start_num + len(rev_primer)):]
-    trimmed_f_quality = f_quality[len(fwd_primer):]
+    trimmed_f_quality = f_quality[trim_start:]
     trimmed_r_quality = r_quality[(primer_start_num + len(rev_primer)):]
     kraken_only_16s_r1.write(f"{id_f}\n{trimmed_f_seq}\n+\n{trimmed_f_quality}\n")
     kraken_only_16s_r2.write(f"{id_r}\n{trimmed_r_seq}\n+\n{trimmed_r_quality}\n")
+    read_id = id_f.split(" ")[0].lstrip("@")
+    manifest.write(f"{read_index}\t{read_id}\t{primer_start}\n")
 
 
 def _create_16s_only_fastq_parallel(
     r1_filename, r2_filename, only_16s_r1_filename, only_16s_r2_filename,
     kraken_only_16s_r1_filename, kraken_only_16s_r2_filename,
-    fwd_primer, rev_primer, max_shift, max_mm, primer_start_num, analysis_workers
+    manifest_filename, fwd_primer, rev_primer, max_shift, max_mm,
+    primer_start_num, analysis_workers
 ):
     """Classify read chunks in workers; keep all output writing in the parent."""
     with open_maybe_gzip(r1_filename, "rt") as r1, \
@@ -221,13 +271,17 @@ def _create_16s_only_fastq_parallel(
          open(only_16s_r1_filename, "w") as only_16s_r1, \
          open(only_16s_r2_filename, "w") as only_16s_r2, \
          open(kraken_only_16s_r1_filename, "w") as kraken_only_16s_r1, \
-         open(kraken_only_16s_r2_filename, "w") as kraken_only_16s_r2:
+         open(kraken_only_16s_r2_filename, "w") as kraken_only_16s_r2, \
+         open(manifest_filename, "w") as manifest:
+        manifest.write("read_index\tread_id\tr1_primer_start\n")
         def chunks():
+            first_index = 0
             while True:
-                records = _read_16s_chunk(r1, r2, EXTRACTION_CHUNK_SIZE)
+                records = _read_16s_chunk(r1, r2, EXTRACTION_CHUNK_SIZE, first_index)
                 if not records:
                     return
                 yield records
+                first_index += len(records)
 
         with multiprocessing.Pool(
             processes=analysis_workers,
@@ -235,11 +289,12 @@ def _create_16s_only_fastq_parallel(
             initargs=(fwd_primer, rev_primer, max_shift, max_mm, primer_start_num),
         ) as pool:
             processed = 0
-            for records, decisions in pool.imap(_classify_16s_chunk, chunks()):
-                for record, is_16s in zip(records, decisions):
+            for records, primer_starts in pool.imap(_classify_16s_chunk, chunks()):
+                for record, primer_start in zip(records, primer_starts):
                     _write_16s_record(
-                        record, is_16s, fwd_primer, rev_primer, primer_start_num,
+                        record, primer_start, fwd_primer, rev_primer, primer_start_num,
                         only_16s_r1, only_16s_r2, kraken_only_16s_r1, kraken_only_16s_r2,
+                        manifest,
                     )
                 processed += len(records)
                 if processed % 1000 == 0:
@@ -250,7 +305,7 @@ def create_16s_only_fastq(
     r1_filename: str, r2_filename: str,
     only_16s_r1_filename: str, only_16s_r2_filename: str,
     kraken_only_16s_r1_filename: str, kraken_only_16s_r2_filename: str,
-    primers_filename: str,
+    manifest_filename: str, primers_filename: str,
     max_shift: int, max_mm: int,
     primer_start_num: int = 42,
     analysis_workers: int = 1,
@@ -276,7 +331,8 @@ def create_16s_only_fastq(
         return _create_16s_only_fastq_parallel(
             r1_filename, r2_filename, only_16s_r1_filename, only_16s_r2_filename,
             kraken_only_16s_r1_filename, kraken_only_16s_r2_filename,
-            fwd_primer, rev_primer, max_shift, max_mm, primer_start_num, analysis_workers,
+            manifest_filename, fwd_primer, rev_primer, max_shift, max_mm,
+            primer_start_num, analysis_workers,
         )
 
     # open files, both original (to read from) and new (to write to)
@@ -285,8 +341,10 @@ def create_16s_only_fastq(
     open(only_16s_r1_filename, "w") as only_16s_r1, \
     open(only_16s_r2_filename, "w") as only_16s_r2, \
     open(kraken_only_16s_r1_filename, "w") as kraken_only_16s_r1, \
-    open(kraken_only_16s_r2_filename, "w") as kraken_only_16s_r2:
+    open(kraken_only_16s_r2_filename, "w") as kraken_only_16s_r2, \
+    open(manifest_filename, "w") as manifest:
 
+        manifest.write("read_index\tread_id\tr1_primer_start\n")
         # read in the read_ID line
         i = 0
         f_line = r1.readline()
@@ -305,27 +363,16 @@ def create_16s_only_fastq(
                 f_quality = r1.readline().strip()
                 r_quality = r2.readline().strip()
 
-            # note that 16s primers must be present in both fwd and rev reads
-            if check_primer_match_seq(f_seq, fwd_primer, max_shift, max_mm) \
-            and check_primer_match_seq(r_seq, rev_primer, max_shift, max_mm, primer_start_num):                    
-
-                only_16s_r1.write(f"{id_f}\n{f_seq}\n+\n{f_quality}\n")
-                only_16s_r2.write(f"{id_r}\n{r_seq}\n+\n{r_quality}\n")
-
-                # trim sequences to prepare for Kraken 16s taxonomic classification
-                # remove primers from both fwd & rev sequences
-                # remove barcode & overlap from rev sequence
-                # then add trimmed read to other 16s-only fastq files, to be used for Kraken input
-                trimmed_f_seq = f_seq[len(fwd_primer):]
-                trimmed_r_seq = r_seq[(primer_start_num + len(rev_primer)):]
-
-            # 2026-08-10: Trim quality strings at the same coordinates as sequences.
-                # Reason: FASTQ sequence and quality lines must have identical lengths.
-                trimmed_f_quality = f_quality[len(fwd_primer):]
-                trimmed_r_quality = r_quality[(primer_start_num + len(rev_primer)):]
-
-                kraken_only_16s_r1.write(f"{id_f}\n{trimmed_f_seq}\n+\n{trimmed_f_quality}\n")
-                kraken_only_16s_r2.write(f"{id_r}\n{trimmed_r_seq}\n+\n{trimmed_r_quality}\n")
+            # note that 16s primers must be present in both R1 and R2 reads
+            r1_primer_start = find_16s_r1_primer_start(f_seq, fwd_primer, max_mm)
+            if r1_primer_start is not None and check_primer_match_seq(
+                    r_seq, rev_primer, max_shift, max_mm, primer_start_num):
+                record = (i, id_f, id_r, f_seq, r_seq, f_quality, r_quality)
+                _write_16s_record(
+                    record, r1_primer_start, fwd_primer, rev_primer, primer_start_num,
+                    only_16s_r1, only_16s_r2, kraken_only_16s_r1,
+                    kraken_only_16s_r2, manifest,
+                )
 
             # prepare for next read
             f_line = r1.readline()
@@ -351,6 +398,7 @@ def main():
     parser.add_argument("--r2_only_16s_fastq", type=str, default="tmp/only_16s_R2.fastq")
     parser.add_argument("--kraken_r1_only_16s_fastq", type=str, default="tmp/kraken_R1.fastq")
     parser.add_argument("--kraken_r2_only_16s_fastq", type=str, default="tmp/kraken_R2.fastq")
+    parser.add_argument("--r1_16s_manifest", type=str, default="tmp/16s_r1_primer_starts.tsv")
     parser.add_argument("--max_shift_primer", type=int, default=4)
     parser.add_argument("--max_mm_primer", type=int, default=4)
     parser.add_argument("--primer_start_num", type=int, default=42)
@@ -362,7 +410,8 @@ def main():
     # Reason: default tmp paths must work in a new result directory.
     ensure_output_directories(
         args.r1_only_16s_fastq, args.r2_only_16s_fastq,
-        args.kraken_r1_only_16s_fastq, args.kraken_r2_only_16s_fastq)
+        args.kraken_r1_only_16s_fastq, args.kraken_r2_only_16s_fastq,
+        args.r1_16s_manifest)
     
     # make sure input file paths exist
     if not os.path.exists(args.r1_fastq):
@@ -379,7 +428,7 @@ def main():
         args.r1_fastq, args.r2_fastq,
         args.r1_only_16s_fastq, args.r2_only_16s_fastq,
         args.kraken_r1_only_16s_fastq, args.kraken_r2_only_16s_fastq,
-        args.primers_filename, args.max_shift_primer,
+        args.r1_16s_manifest, args.primers_filename, args.max_shift_primer,
         args.max_mm_primer, args.primer_start_num, args.analysis_workers)
 
 if __name__ == "__main__":
