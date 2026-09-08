@@ -285,21 +285,84 @@ def conduct_asv_typing(
 
     # 2026-08-28: Emit standardized public ASV cluster identifiers.
     # Reason: distinguish generated sequence clusters from biological variant names.
-    # write global ASV output file, which contains all the ASV sequences matched to their names (e.g. ASV_1)
+    # Keep this pre-filter order so ASV IDs and sequences do not change.
     seq_to_asv = {}
-    with open(global_asv_tsv_filename, "w") as out:
-        out.write("Core_ASV_ID\tcell_count\tcore_sequence\n")
-        for i, (seq, cell_count) in enumerate(global_counter.most_common(), start=1):
-            asv_id = f"ASV_{i}"
-            seq_to_asv[seq] = asv_id
-            out.write(f"{asv_id}\t{cell_count}\t{seq}\n")
+    global_asv_records = []
+    for i, (seq, cell_count) in enumerate(global_counter.most_common(), start=1):
+        asv_id = f"ASV_{i}"
+        seq_to_asv[seq] = asv_id
+        global_asv_records.append((asv_id, seq))
 
     # write barcode summary, but with new ASV columns appended
     # also filter out cells classified as having mixed ASVs
-    write_ASV_barcode_summary(
+    filtered_df = write_ASV_barcode_summary(
         barcode_summary_tsv_filename, final_barcodes, \
         barcode_summary, seq_to_asv, \
         asv_barcode_summary_tsv_filename, primers_file, filter_corrupted)
+
+    # 2026-09-08: Recalculate global ASV cell counts after all cell filters.
+    # Reason: global_asv.tsv must agree with the surviving ASV barcode summary.
+    surviving_counts = filtered_df["Assigned_core_asv"].value_counts()
+    with open(global_asv_tsv_filename, "w") as out:
+        out.write("Core_ASV_ID\tcell_count\tcore_sequence\n")
+        for asv_id, sequence in global_asv_records:
+            cell_count = int(surviving_counts.get(asv_id, 0))
+            if cell_count > 0:
+                out.write(f"{asv_id}\t{cell_count}\t{sequence}\n")
+
+
+def filter_asv_taxonomy_conflicts(df_combined, min_cells: int = 10, dominance: float = 0.99):
+    """Remove cells conflicting with a strongly dominant phylum within an ASV."""
+    # 2026-09-08: Compare ASV assignments with explicit phylum fields.
+    # Reason: a strongly supported ASV should not retain cells assigned to a
+    # conflicting broad taxon in the final high-confidence matrix.
+    phylum = df_combined["Predicted taxonomy"].astype("string").str.extract(
+        r"(?:^|\| )P - ([^|]+)", expand=False
+    )
+    support = df_combined.groupby("Assigned_core_asv")["Assigned_core_asv"].transform("size")
+    phylum_counts = (
+        pd.DataFrame({"Assigned_core_asv": df_combined["Assigned_core_asv"], "phylum": phylum})
+        .groupby(["Assigned_core_asv", "phylum"], dropna=False)
+        .size()
+        .rename("count")
+        .reset_index()
+    )
+    phylum_counts = phylum_counts.sort_values(
+        ["Assigned_core_asv", "count", "phylum"],
+        ascending=[True, False, True],
+        na_position="last",
+    )
+    dominant_phylum = phylum_counts.drop_duplicates("Assigned_core_asv").set_index(
+        "Assigned_core_asv"
+    )["phylum"]
+    dominant_count = phylum_counts.drop_duplicates("Assigned_core_asv").set_index(
+        "Assigned_core_asv"
+    )["count"]
+    dominant_for_cell = df_combined["Assigned_core_asv"].map(dominant_phylum)
+    dominant_fraction = (
+        df_combined["Assigned_core_asv"].map(dominant_count)
+        / df_combined["Assigned_core_asv"].map(
+            df_combined["Assigned_core_asv"].value_counts()
+        )
+    )
+    conflict = (
+        (support >= min_cells)
+        & (dominant_fraction >= dominance)
+        & dominant_for_cell.notna()
+        & (dominant_for_cell != "None")
+        & phylum.notna()
+        & (phylum != dominant_for_cell)
+    )
+    removed_counts = df_combined.loc[conflict, "Assigned_core_asv"].value_counts().to_dict()
+    if removed_counts:
+        df_combined.loc[conflict, "Status"] = "ASV_taxonomy_conflict"
+        df_combined.drop(index=df_combined.index[conflict], inplace=True)
+        print("ASV-taxonomy conflicts removed:", sum(removed_counts.values()))
+        for asv_id, count in removed_counts.items():
+            print(f"  {asv_id}: {count}")
+    else:
+        print("ASV-taxonomy conflicts removed: 0")
+    return removed_counts
 
 
 def filter_ASV(df_combined, filter_corrupted: bool = False):
@@ -321,6 +384,7 @@ def filter_ASV(df_combined, filter_corrupted: bool = False):
         index=df_combined.index[df_combined["Status"].isin(statuses_to_remove)],
         inplace=True,
     )
+    filter_asv_taxonomy_conflicts(df_combined)
 
     print("Pre-filtering # of barcodes:", original_num_barcodes)
     print("  # of barcodes filtered out:", original_num_barcodes-len(df_combined))
@@ -367,6 +431,7 @@ def write_ASV_barcode_summary(filtered_barcode_summary_tsv_filename: str, \
     filter_ASV(df_combined, filter_corrupted) # filter out cells with mixed and optionally low-confidence single ASVs
 
     df_combined.to_csv(asv_barcode_summary_tsv_filename, sep = "\t", index_label = "Barcode")
+    return df_combined
 
 
 # 2026-08-10: Parse command-line booleans from explicit true/false strings.
