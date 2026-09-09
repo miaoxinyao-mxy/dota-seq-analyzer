@@ -2,19 +2,20 @@
 """Filter paired FASTQ reads before DoTA-Seq analysis."""
 
 import argparse
+import json
 import os
 from typing import Dict
 
 try:
     from .helper_functions import ensure_output_directories, open_maybe_gzip
+    from .algorithm_config import (
+        BARCODE_LENGTH, MIN_BARCODE_Q25, MIN_MEAN_PHRED, MIN_READ_LENGTH,
+    )
 except ImportError:
     from helper_functions import ensure_output_directories, open_maybe_gzip
-
-
-MIN_READ_LENGTH = 130
-MIN_MEAN_PHRED = 25
-BARCODE_LENGTH = 20
-MIN_BARCODE_Q25 = 15
+    from algorithm_config import (
+        BARCODE_LENGTH, MIN_BARCODE_Q25, MIN_MEAN_PHRED, MIN_READ_LENGTH,
+    )
 
 
 def phred_scores(quality: str):
@@ -113,8 +114,14 @@ def main() -> None:
     parser.add_argument("--r2", required=True)
     parser.add_argument("--output-r1", required=True)
     parser.add_argument("--output-r2", required=True)
+    parser.add_argument("--stats-json")
     args = parser.parse_args()
     counts = filter_paired_fastq(args.r1, args.r2, args.output_r1, args.output_r2)
+    if args.stats_json:
+        ensure_output_directories(args.stats_json)
+        with open(args.stats_json, "w", encoding="utf-8") as handle:
+            json.dump(counts, handle, indent=2)
+            handle.write("\n")
     print("[filter-reads] " + " ".join(f"{key}={value}" for key, value in counts.items()), flush=True)
 
 

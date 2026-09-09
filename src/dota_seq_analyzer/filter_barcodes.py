@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import pandas as pd
 
-def filter_barcodes_in_df(df, min_16s_reads: int = 5, max_contam: float = 0.1, min_barcodes: int = 10):
+def filter_barcodes_in_df(
+    df, min_16s_reads: int = 5, max_contam: float = 0.1,
+    min_barcodes: int = 10, stats: dict = None,
+):
     """
     Filter barcode summaries while preserving the existing scientific rules.
 
@@ -47,15 +50,22 @@ def filter_barcodes_in_df(df, min_16s_reads: int = 5, max_contam: float = 0.1, m
     # Reason: callers now assign the result, avoiding dtype/index reconstruction risks.
     df = filtered_df
     stage_1_barcodes = len(df)
+    if stats is not None:
+        stats["before_stage1_taxonomy_filter"] = original_num_barcodes
+        stats["after_stage1_taxonomy_filter"] = stage_1_barcodes
     print("  # of barcodes filtered out:", (original_num_barcodes - stage_1_barcodes))
     print("  # of barcodes remaining:", stage_1_barcodes)
 
     # 2026-09-04: Preserve the existing early exit when Stage 2 is disabled.
     # Reason: min_barcodes=0 means Stage 1 only, with no taxonomy sorting/filtering.
     if df.empty:
+        if stats is not None:
+            stats["after_minimum_cells_per_taxon"] = 0
         print("Barcode filtering complete - final # of barcodes: 0")
         return df
     if min_barcodes == 0:
+        if stats is not None:
+            stats["after_minimum_cells_per_taxon"] = stage_1_barcodes
         print("Stage 2: Taxonomic minimum-cell filtering disabled.")
         print("Barcode filtering complete - final # of barcodes:", stage_1_barcodes)
         return df
@@ -69,6 +79,8 @@ def filter_barcodes_in_df(df, min_16s_reads: int = 5, max_contam: float = 0.1, m
     df = filtered_df.loc[taxon_counts >= min_barcodes].copy()
 
     stage_2_barcodes = len(df)
+    if stats is not None:
+        stats["after_minimum_cells_per_taxon"] = stage_2_barcodes
     print("  # of barcodes filtered out:", (stage_1_barcodes - stage_2_barcodes))
     print("  # of barcodes remaining:", stage_2_barcodes)
     print("Barcode filtering complete - final # of barcodes:", stage_2_barcodes)

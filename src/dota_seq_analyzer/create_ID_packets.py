@@ -8,6 +8,9 @@ import sys
 import multiprocessing
 from typing import List, Dict
 from helper_functions import open_maybe_gzip, ensure_output_directories
+from algorithm_config import (
+    BARCODE_LENGTH, PRIMER_MAX_MISMATCHES, PRIMER_MAX_SHIFT, R2_PRIMER_START,
+)
 
 PRIMER_CHUNK_SIZE = 2048
 _PRIMER_WORKER_CONFIG = None
@@ -437,10 +440,10 @@ def main():
     parser.add_argument("--r1_16s_manifest", type=str, required=True)
     parser.add_argument("--kraken_output", type=str, required=True)
     parser.add_argument("--kraken_report", type=str, required=True)
-    parser.add_argument("--max_shift_primer", type=int, default=4)
-    parser.add_argument("--max_mm_primer", type=int, default=4)
-    parser.add_argument("--primer_start_num", type=int, default=42)
-    parser.add_argument("--barcode_len", type=int, default=20)
+    parser.add_argument("--max_shift_primer", type=int, default=PRIMER_MAX_SHIFT)
+    parser.add_argument("--max_mm_primer", type=int, default=PRIMER_MAX_MISMATCHES)
+    parser.add_argument("--primer_start_num", type=int, default=R2_PRIMER_START)
+    parser.add_argument("--barcode_len", type=int, default=BARCODE_LENGTH)
     parser.add_argument("-@", "--threads", dest="analysis_workers", type=int, default=1, metavar="INT", help="Number of parallel workers used by DoTA-seq analysis")
     # 2026-09-04: Reject invalid worker counts before starting the pipeline.
     # Reason: a non-positive process count cannot create a valid worker pool.

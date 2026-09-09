@@ -12,6 +12,12 @@ import pandas as pd
 from mle_revised import parse_and_analyze_perfect_corrected_revised
 from filter_barcodes import filter_barcodes_in_df
 from helper_functions import get_arg_names, ensure_output_directories
+from algorithm_config import (
+    DEFAULT_MIN_CELLS_PER_TAXON, MAX_TAXONOMY_CONTAMINATION,
+    MIN_16S_READS, MLE_ALPHA_PRIOR, MLE_BETA_PRIOR, MLE_MIN_CONFIDENCE,
+    MLE_MIN_NOISE_READS, MLE_NOISE_CUTOFF_RATIO, MLE_P_ERROR, MLE_P_MATCH,
+    MLE_P_NONE,
+)
     
 def find_arg_data(packet_list: List[Dict], num_arg_genes: int):
     """Count the # of reads of each target gene, present in the given cell"""
@@ -110,18 +116,22 @@ def _write_barcode_summary_parallel(
     df.to_csv(unfiltered_tsv_filename, sep="\t", index_label="Barcode")
     # 2026-09-04: Use the returned filtered DataFrame explicitly.
     # Reason: vectorized filtering no longer reconstructs the input object in place.
-    df = filter_barcodes_in_df(df, min_16s_reads, max_contam, min_barcodes=min_barcodes)
+    filter_stats = {}
+    df = filter_barcodes_in_df(
+        df, min_16s_reads, max_contam, min_barcodes=min_barcodes,
+        stats=filter_stats)
     df.to_csv(tsv_filename, sep="\t", index_label="Barcode")
+    return filter_stats
 
 
 def write_barcode_summary_to_tsv(b_with_ids_filename: str, 
     _16s_packet_filename: str, arg_packet_filename: str, 
     unfiltered_tsv_filename: str, tsv_filename: str, primers_filename: str,
-    min_16s_reads: int = 5, max_contam: float = 0.1,
-    p_match: float = 0.90, p_none: float = 0.09, p_error: float = 0.01,
-    alpha_prior: float = 1.0, beta_prior: float = 9.0,
-    min_confidence: float = 0.95, min_noise_reads: int = 2,
-    noise_cutoff_ratio: float = 0.05, min_barcodes: int = 10, analysis_workers: int = 1):
+    min_16s_reads: int = MIN_16S_READS, max_contam: float = MAX_TAXONOMY_CONTAMINATION,
+    p_match: float = MLE_P_MATCH, p_none: float = MLE_P_NONE, p_error: float = MLE_P_ERROR,
+    alpha_prior: float = MLE_ALPHA_PRIOR, beta_prior: float = MLE_BETA_PRIOR,
+    min_confidence: float = MLE_MIN_CONFIDENCE, min_noise_reads: int = MLE_MIN_NOISE_READS,
+    noise_cutoff_ratio: float = MLE_NOISE_CUTOFF_RATIO, min_barcodes: int = DEFAULT_MIN_CELLS_PER_TAXON, analysis_workers: int = 1):
     """Obtain and compile all per-cell taxonomic & target gene count data into a single 'barcode summary', and write to a TSV file"""
         
     with open(b_with_ids_filename, 'r') as b_with_ids_file, \
@@ -145,14 +155,13 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
         # 2026-09-04: Analyze barcode chunks in workers while keeping output in the parent.
         # Reason: the per-barcode analysis is independent, but output order must remain stable.
         if analysis_workers > 1:
-            _write_barcode_summary_parallel(
+            return _write_barcode_summary_parallel(
                 b_with_ids_filename, _16s_packet_index, arg_packet_index,
                 unfiltered_tsv_filename, tsv_filename, primers_filename,
                 min_16s_reads, max_contam, p_match, p_none, p_error,
                 alpha_prior, beta_prior, min_confidence, min_noise_reads,
                 noise_cutoff_ratio, min_barcodes, num_arg_genes, analysis_workers,
             )
-            return
 
         # iterate through barcodes, and obtain & compile information for each barcode
         i = 0
@@ -176,8 +185,12 @@ def write_barcode_summary_to_tsv(b_with_ids_filename: str,
         df.to_csv(unfiltered_tsv_filename, sep = "\t", index_label = "Barcode")
         # 2026-09-04: Use the returned filtered DataFrame explicitly.
         # Reason: vectorized filtering returns a new frame instead of mutating row-by-row.
-        df = filter_barcodes_in_df(df, min_16s_reads, max_contam, min_barcodes=min_barcodes) # filter barcodes
+        filter_stats = {}
+        df = filter_barcodes_in_df(
+            df, min_16s_reads, max_contam, min_barcodes=min_barcodes,
+            stats=filter_stats) # filter barcodes
         df.to_csv(tsv_filename, sep = "\t", index_label = "Barcode")
+        return filter_stats
 
 def find_column_names(primers_filename):
     """Obtain list of column names for the barcode summary"""
@@ -245,21 +258,22 @@ def main():
     parser.add_argument("--unfiltered_tsv_filename", type=str, default = "tmp/unfiltered_barcode_summary.tsv")
     parser.add_argument("--tsv_filename", type=str, default = "tmp/barcode_summary.tsv")
     parser.add_argument("--primers_filename", type=str, required=True)
-    parser.add_argument("--min_16s_reads", type=int, default = 5)
-    parser.add_argument("--max_contam", type=float, default = 0.1)
+    parser.add_argument("--min_16s_reads", type=int, default=MIN_16S_READS)
+    parser.add_argument("--max_contam", type=float, default=MAX_TAXONOMY_CONTAMINATION)
     # 2026-08-28: Expose the Stage 2 threshold while retaining the current default.
     # Reason: users can control low-count taxon filtering without a separate skip flag.
-    parser.add_argument("--min_cells_per_taxon", type=int, default=10)
+    parser.add_argument("--min_cells_per_taxon", type=int, default=DEFAULT_MIN_CELLS_PER_TAXON)
 
-    parser.add_argument("--p_match", type=float, default=0.90)
-    parser.add_argument("--p_none", type=float, default=0.09)
-    parser.add_argument("--p_error", type=float, default=0.01)
-    parser.add_argument("--alpha_prior", type=float, default=1.0)
-    parser.add_argument("--beta_prior", type=float, default=9.0)
-    parser.add_argument("--min_confidence", type=float, default=0.95)
-    parser.add_argument("--min_noise_reads", type=int, default=2)
-    parser.add_argument("--noise_cutoff_ratio", type=float, default=0.05)
+    parser.add_argument("--p_match", type=float, default=MLE_P_MATCH)
+    parser.add_argument("--p_none", type=float, default=MLE_P_NONE)
+    parser.add_argument("--p_error", type=float, default=MLE_P_ERROR)
+    parser.add_argument("--alpha_prior", type=float, default=MLE_ALPHA_PRIOR)
+    parser.add_argument("--beta_prior", type=float, default=MLE_BETA_PRIOR)
+    parser.add_argument("--min_confidence", type=float, default=MLE_MIN_CONFIDENCE)
+    parser.add_argument("--min_noise_reads", type=int, default=MLE_MIN_NOISE_READS)
+    parser.add_argument("--noise_cutoff_ratio", type=float, default=MLE_NOISE_CUTOFF_RATIO)
     parser.add_argument("-@", "--threads", dest="analysis_workers", type=int, default=1, metavar="INT")
+    parser.add_argument("--stats_json")
 
     args = parser.parse_args()
 
@@ -284,7 +298,7 @@ def main():
         print(f"❌ Error: input file not found: {args.primers_filename}")
         sys.exit(1)
 
-    write_barcode_summary_to_tsv(
+    stats = write_barcode_summary_to_tsv(
         args.b_with_ids_filename, 
         args._16s_packet_filename, args.arg_packet_filename, 
         args.unfiltered_tsv_filename, args.tsv_filename, args.primers_filename,
@@ -292,6 +306,11 @@ def main():
         args.p_match, args.p_none, args.p_error, args.alpha_prior, args.beta_prior,
         args.min_confidence, args.min_noise_reads, args.noise_cutoff_ratio,
         args.min_cells_per_taxon, args.analysis_workers)
+    if args.stats_json:
+        ensure_output_directories(args.stats_json)
+        with open(args.stats_json, "w", encoding="utf-8") as handle:
+            json.dump(stats, handle, indent=2)
+            handle.write("\n")
 
 if __name__ == "__main__":
     main()

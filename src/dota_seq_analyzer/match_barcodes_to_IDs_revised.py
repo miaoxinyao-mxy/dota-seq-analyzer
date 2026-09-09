@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 from collections import Counter
 from typing import List, Dict, Tuple
+import json
 import os
 import argparse
 import sys
 from helper_functions import ensure_output_directories
+from algorithm_config import BARCODE_LENGTH, BARCODE_MAX_SHIFT
 
 def extract_all_b_with_ids(
     _16s_rev_fastq: str, arg_rev_fastq: str, unclassified_rev_fastq: str, 
@@ -178,6 +180,10 @@ def create_b_with_ids_file(
     bcs_with_counts, all_b_with_ids = extract_all_b_with_ids(_16s_rev_fastq, arg_rev_fastq, unclassified_rev_fastq, barcode_len) # match IDs to barcodes
     clustered_b_with_ids = create_clustered_b_with_ids(bcs_with_counts, all_b_with_ids, barcode_shift) # cluster similar barcodes, to account for sequencing errors
     write_b_with_ids_to_file(clustered_b_with_ids, b_with_ids_filename) # write data to a text file
+    return {
+        "raw_unique_barcodes": len(bcs_with_counts),
+        "clustered_barcodes": len(clustered_b_with_ids),
+    }
 
 
 def main():
@@ -192,11 +198,12 @@ def main():
         "--unclassified_r2_fastq", "--unclassified_rev_fastq",
         dest="unclassified_rev_fastq", type=str, required=True,
     )
-    parser.add_argument("--max_shift_barcode", type=int, default = 1)
-    parser.add_argument("--barcode_len", type=int, default=20)
+    parser.add_argument("--max_shift_barcode", type=int, default=BARCODE_MAX_SHIFT)
+    parser.add_argument("--barcode_len", type=int, default=BARCODE_LENGTH)
     # 2026-08-10: Route the barcode-to-read mapping to tmp by default.
     # Reason: this mapping is an internal input for downstream stages.
     parser.add_argument("--b_with_ids_filename", type=str, default = "tmp/b_with_ids.txt")
+    parser.add_argument("--stats_json")
 
     args = parser.parse_args()
 
@@ -215,9 +222,14 @@ def main():
         print(f"❌ Error: input file not found: {args.unclassified_rev_fastq}")
         sys.exit(1)
 
-    create_b_with_ids_file(
+    stats = create_b_with_ids_file(
         args._16s_rev_fastq, args.arg_rev_fastq, args.unclassified_rev_fastq,
         args.b_with_ids_filename, args.max_shift_barcode, args.barcode_len)
+    if args.stats_json:
+        ensure_output_directories(args.stats_json)
+        with open(args.stats_json, "w", encoding="utf-8") as handle:
+            json.dump(stats, handle, indent=2)
+            handle.write("\n")
     
 if __name__ == "__main__":
     main()

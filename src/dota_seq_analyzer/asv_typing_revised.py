@@ -1,38 +1,27 @@
 #!/usr/bin/env python3
 import sys
 import re
+import json
 import pandas as pd
 from collections import defaultdict, Counter
 from typing import List, Dict
 from helper_functions import get_arg_names, ensure_output_directories
+from algorithm_config import (
+    ASV_MAX_DISTANCE as MAX_DISTANCE, ASV_MAX_SHIFT as MAX_SHIFT,
+    ASV_MIN_READS as MIN_READS,
+    ASV_MIXED_RATIO_THRESHOLD as MIXED_RATIO_THRESHOLD,
+    ASV_R1_START as R1_START, ASV_R1_END as R1_END,
+    ASV_R2_START as R2_START, ASV_R2_END as R2_END,
+    ASV_TAXONOMY_CONFLICT_MIN_CELLS,
+    ASV_TAXONOMY_CONFLICT_DOMINANCE,
+)
 import os
 import argparse
 # 2026-08-28: Exit non-zero when a required stage input is missing.
 # Reason: the public CLI uses subprocess check=True to stop failed stages.
 
-# =====================================================================
-# CORE BIOPHYSICAL & BIOINFORMATICS HYPERPARAMETERS
-# =====================================================================
-# Intragenomic variation tolerance: 16S rRNA genes within the same bacterial 
-# genome can harbor 1-2 bp natural polymorphism due to multiple operon copies.
-MAX_DISTANCE = 3              
-
-# Maximum permitido shift (bp) during semi-global sequence alignment to handle 
-# indexing/sequencing length variations.
-MAX_SHIFT = 3                 
-
-# Minimum sequencing depth (read count) required to evaluate a single-cell droplet.
-MIN_READS = 5                 
-
-# Bio-physical threshold for contamination: If a distinct out-of-bounds 
-# (>2bp) secondary ASV accounts for >= 20% of the valid read pool, it indicates 
-# a true doublet/co-encapsulation event rather than ambient background DNA soup.
-MIXED_RATIO_THRESHOLD = 0.10  
-
-# 1-based extraction coordinates to accurately truncate and merge R1/R2 reads 
-# while safely skipping the 20bp cell barcode sequence at the start of R2.
-R1_START, R1_END = 30, 120
-R2_START, R2_END = 70, 120 
+# Algorithm constants are imported from algorithm_config so runtime metadata and
+# the implementation always use the same effective values.
 
 
 def semi_global_distance(a, b, max_shift=2):
@@ -317,10 +306,12 @@ def conduct_asv_typing(
 
     # write barcode summary, but with new ASV columns appended
     # also filter out cells classified as having mixed ASVs
+    filter_stats = {}
     filtered_df = write_ASV_barcode_summary(
         barcode_summary_tsv_filename, final_barcodes, \
         barcode_summary, seq_to_asv, \
-        asv_barcode_summary_tsv_filename, primers_file, filter_corrupted)
+        asv_barcode_summary_tsv_filename, primers_file, filter_corrupted,
+        filter_stats)
 
     # 2026-09-08: Recalculate global ASV cell counts after all cell filters.
     # Reason: global_asv.tsv must agree with the surviving ASV barcode summary.
@@ -331,9 +322,14 @@ def conduct_asv_typing(
             cell_count = int(surviving_counts.get(asv_id, 0))
             if cell_count > 0:
                 out.write(f"{asv_id}\t{cell_count}\t{sequence}\n")
+    filter_stats["final_asvs"] = int((surviving_counts > 0).sum())
+    return filter_stats
 
 
-def filter_asv_taxonomy_conflicts(df_combined, min_cells: int = 10, dominance: float = 0.99):
+def filter_asv_taxonomy_conflicts(
+    df_combined, min_cells: int = ASV_TAXONOMY_CONFLICT_MIN_CELLS,
+    dominance: float = ASV_TAXONOMY_CONFLICT_DOMINANCE,
+):
     """Remove cells conflicting with a strongly dominant phylum within an ASV."""
     # 2026-09-08: Compare ASV assignments with explicit phylum fields.
     # Reason: a strongly supported ASV should not retain cells assigned to a
@@ -406,16 +402,24 @@ def filter_ASV(df_combined, filter_corrupted: bool = False):
         index=df_combined.index[df_combined["Status"].isin(statuses_to_remove)],
         inplace=True,
     )
-    filter_asv_taxonomy_conflicts(df_combined)
+    after_status_filter = len(df_combined)
+    conflict_counts = filter_asv_taxonomy_conflicts(df_combined)
 
     print("Pre-filtering # of barcodes:", original_num_barcodes)
     print("  # of barcodes filtered out:", original_num_barcodes-len(df_combined))
     print("  # of barcodes remaining:", len(df_combined))
+    return {
+        "before_asv_filter": original_num_barcodes,
+        "after_asv_status_filter": after_status_filter,
+        "asv_taxonomy_conflicts_removed": sum(conflict_counts.values()),
+        "final_cells": len(df_combined),
+    }
 
 
 def write_ASV_barcode_summary(filtered_barcode_summary_tsv_filename: str, \
     final_barcodes: List[str], barcode_summary: Dict, seq_to_asv: Dict, \
-    asv_barcode_summary_tsv_filename: str, primers_file: str, filter_corrupted: bool = False):
+    asv_barcode_summary_tsv_filename: str, primers_file: str,
+    filter_corrupted: bool = False, filter_stats: Dict = None):
     """
     Write revised barcode summary - specifically, add new columns for per-cell ASV information, 
     and filter cells based on their ASV status.
@@ -450,7 +454,9 @@ def write_ASV_barcode_summary(filtered_barcode_summary_tsv_filename: str, \
         df_original_args.drop(col, axis = 1, inplace = True)
 
     df_combined = pd.concat([df_original_mle_info, df_asv, df_original_args], axis=1)
-    filter_ASV(df_combined, filter_corrupted) # filter out cells with mixed and optionally low-confidence single ASVs
+    observed_filter_stats = filter_ASV(df_combined, filter_corrupted) # filter out cells with mixed and optionally low-confidence single ASVs
+    if filter_stats is not None:
+        filter_stats.update(observed_filter_stats)
 
     df_combined.to_csv(asv_barcode_summary_tsv_filename, sep = "\t", index_label = "Barcode")
     return df_combined
@@ -486,6 +492,7 @@ def main():
     # Reason: argparse type=bool treats every non-empty string as True.
     parser.add_argument("--filter_corrupted", type=parse_bool, default=False)
     parser.add_argument("--primers_file", type=str, required=True)
+    parser.add_argument("--stats_json")
 
     args = parser.parse_args()
 
@@ -513,12 +520,17 @@ def main():
         print(f"❌ Error: input file not found: {args.primers_file}")
         sys.exit(1)
 
-    conduct_asv_typing(
+    stats = conduct_asv_typing(
         args.barcode_summary_tsv, args.b_with_ids,
         args.r1_16s_fastq, args.r2_16s_fastq, args.r1_16s_manifest,
         args.asv_barcode_summary_tsv, args.global_asv_tsv,
         args.primers_file, args.filter_corrupted
     )
+    if args.stats_json:
+        ensure_output_directories(args.stats_json)
+        with open(args.stats_json, "w", encoding="utf-8") as handle:
+            json.dump(stats, handle, indent=2)
+            handle.write("\n")
 
 if __name__ == "__main__":
     main()

@@ -5,11 +5,17 @@
 # Reason: users should run R1/R2 data with one command instead of invoking internal modules manually.
 
 import argparse
+import json
+from importlib.metadata import PackageNotFoundError, version
+import os
 import shutil
 import subprocess
 import sys
+import tomllib
+import uuid
 from pathlib import Path
 
+from . import algorithm_config as config
 from .helper_functions import get_target_modes
 from .validate_inputs import check_reference_fasta
 
@@ -28,6 +34,23 @@ def _find_project_database(relative_path: str) -> Path:
         if candidate.exists():
             return candidate.resolve()
     return (source_root / relative_path).resolve()
+
+
+def _software_version(source_root: Path) -> str:
+    """Return installed metadata, or the current source-tree project version."""
+    try:
+        return version("dota-seq-analyzer")
+    except PackageNotFoundError:
+        with (source_root / "pyproject.toml").open("rb") as handle:
+            return tomllib.load(handle)["project"]["version"]
+
+
+def _git_commit(source_root: Path):
+    """Return the source checkout commit when Git metadata is available."""
+    result = subprocess.run(
+        ["git", "-C", str(source_root), "rev-parse", "HEAD"],
+        text=True, capture_output=True, check=False)
+    return result.stdout.strip() if result.returncode == 0 else None
 
 
 def main() -> None:
@@ -52,8 +75,13 @@ def main() -> None:
     r1 = Path(args.r1).expanduser().resolve()
     r2 = Path(args.r2).expanduser().resolve()
     primers = Path(args.primers).expanduser().resolve()
-    output_dir = Path(args.output).expanduser().resolve()
+    requested_output_dir = Path(args.output).expanduser().resolve()
     source_dir = Path(__file__).resolve().parent
+    source_root = source_dir.parents[1]
+    run_id = str(uuid.uuid4())
+    if requested_output_dir.exists():
+        parser.error(f"output directory already exists: {requested_output_dir}")
+    output_dir = requested_output_dir.parent / f".{requested_output_dir.name}.incomplete.{run_id}"
 
     for label, path in (("R1", r1), ("R2", r2), ("primer CSV", primers)):
         if not path.is_file():
@@ -85,6 +113,87 @@ def main() -> None:
     # 2026-08-11: Trigger phase-variation analysis only for SSR primer targets.
     # Reason: SSR is the only supported phase-variation mode.
     pv_requested = any(mode == "ssr" for mode in target_modes.values())
+    reconstruction_requested = pv_requested or reference is not None
+    runtime_config = {
+        "run_id": run_id,
+        "software": {
+            "name": "dota-seq-analyzer",
+            "version": _software_version(source_root),
+            "git_commit": _git_commit(source_root),
+        },
+        "inputs": {
+            "r1": str(r1), "r2": str(r2), "primers": str(primers),
+            "taxonomy_database": str(taxonomy_db),
+            "reference_fasta": str(reference) if reference else None,
+        },
+        "target_panel": [
+            {"target_name": target, "mode": mode or "detect"}
+            for target, mode in target_modes.items()
+        ],
+        "parameters": {
+            "analysis_workers": args.analysis_workers,
+            "read_qc": {
+                "minimum_read_length": config.MIN_READ_LENGTH,
+                "minimum_mean_phred": config.MIN_MEAN_PHRED,
+                "barcode_length": config.BARCODE_LENGTH,
+                "minimum_barcode_q25_bases": config.MIN_BARCODE_Q25,
+            },
+            "primer_matching": {
+                "maximum_shift": config.PRIMER_MAX_SHIFT,
+                "maximum_mismatches": config.PRIMER_MAX_MISMATCHES,
+                "r2_primer_start": config.R2_PRIMER_START,
+                "valid_16s_r1_starts": list(config.VALID_16S_R1_STARTS),
+            },
+            "barcode_clustering": {
+                "barcode_length": config.BARCODE_LENGTH,
+                "maximum_shift": config.BARCODE_MAX_SHIFT,
+            },
+            "cell_taxonomy_filtering": {
+                "minimum_16s_reads": config.MIN_16S_READS,
+                "maximum_contamination": config.MAX_TAXONOMY_CONTAMINATION,
+                "minimum_cells_per_taxon": args.min_cells_per_taxon,
+            },
+            "taxonomy_mle": {
+                "p_match": config.MLE_P_MATCH, "p_none": config.MLE_P_NONE,
+                "p_error": config.MLE_P_ERROR,
+                "alpha_prior": config.MLE_ALPHA_PRIOR,
+                "beta_prior": config.MLE_BETA_PRIOR,
+                "minimum_confidence": config.MLE_MIN_CONFIDENCE,
+                "minimum_noise_reads": config.MLE_MIN_NOISE_READS,
+                "noise_cutoff_ratio": config.MLE_NOISE_CUTOFF_RATIO,
+            },
+            "asv": {
+                "r1_start": config.ASV_R1_START, "r1_end": config.ASV_R1_END,
+                "r2_start": config.ASV_R2_START, "r2_end": config.ASV_R2_END,
+                "maximum_distance": config.ASV_MAX_DISTANCE,
+                "maximum_shift": config.ASV_MAX_SHIFT,
+                "minimum_reads": config.ASV_MIN_READS,
+                "mixed_ratio_threshold": config.ASV_MIXED_RATIO_THRESHOLD,
+                "filter_corrupted_single_asv": False,
+                "taxonomy_conflict_minimum_cells": config.ASV_TAXONOMY_CONFLICT_MIN_CELLS,
+                "taxonomy_conflict_dominant_phylum_fraction": config.ASV_TAXONOMY_CONFLICT_DOMINANCE,
+            },
+            "target_background_filtering": {"alpha": config.TARGET_BACKGROUND_ALPHA},
+            "target_sequence_reconstruction": {
+                "performed": reconstruction_requested,
+                "maximum_shift": config.TARGET_SEQUENCE_MAX_SHIFT,
+                "maximum_mismatches": config.TARGET_SEQUENCE_MAX_MISMATCHES,
+                "alpha": config.TARGET_SEQUENCE_ALPHA,
+                "r1_start": config.TARGET_R1_START, "r1_end": config.TARGET_R1_END,
+                "r2_start": config.TARGET_R2_START, "r2_end": config.TARGET_R2_END,
+                "include_all_targets": reference is not None,
+                "mle": {
+                    "p_match": config.MLE_P_MATCH, "p_none": config.MLE_P_NONE,
+                    "p_error": config.MLE_P_ERROR,
+                    "alpha_prior": config.MLE_ALPHA_PRIOR,
+                    "beta_prior": config.MLE_BETA_PRIOR,
+                    "minimum_confidence": config.MLE_MIN_CONFIDENCE,
+                    "minimum_noise_reads": config.MLE_MIN_NOISE_READS,
+                    "noise_cutoff_ratio": config.MLE_NOISE_CUTOFF_RATIO,
+                },
+            },
+        },
+    }
 
     for directory in (
         output_dir,
@@ -93,6 +202,10 @@ def main() -> None:
         output_dir / "figures",
     ):
         directory.mkdir(parents=True, exist_ok=True)
+
+    with (output_dir / "tmp/runtime_config.json").open("w", encoding="utf-8") as handle:
+        json.dump(runtime_config, handle, indent=2)
+        handle.write("\n")
 
     python = sys.executable
     script = lambda name: str(source_dir / name)
@@ -112,6 +225,8 @@ def main() -> None:
             str(filtered_r1),
             "--output-r2",
             str(filtered_r2),
+            "--stats-json",
+            "tmp/read_qc_stats.json",
         ],
         output_dir,
     )
@@ -144,6 +259,9 @@ def main() -> None:
             str(args.analysis_workers),
             "--r1_16s_manifest",
             "tmp/16s_r1_primer_starts.tsv",
+            "--max_shift_primer", str(config.PRIMER_MAX_SHIFT),
+            "--max_mm_primer", str(config.PRIMER_MAX_MISMATCHES),
+            "--primer_start_num", str(config.R2_PRIMER_START),
         ],
         output_dir,
     )
@@ -182,6 +300,10 @@ def main() -> None:
             "tmp/kraken.output",
             "--kraken_report",
             "tmp/kraken.report",
+            "--max_shift_primer", str(config.PRIMER_MAX_SHIFT),
+            "--max_mm_primer", str(config.PRIMER_MAX_MISMATCHES),
+            "--primer_start_num", str(config.R2_PRIMER_START),
+            "--barcode_len", str(config.BARCODE_LENGTH),
             "--threads",
             str(args.analysis_workers),
         ],
@@ -198,6 +320,9 @@ def main() -> None:
             "tmp/arg_R2.fastq",
             "--unclassified_r2_fastq",
             "tmp/unclassified_R2.fastq",
+            "--max_shift_barcode", str(config.BARCODE_MAX_SHIFT),
+            "--barcode_len", str(config.BARCODE_LENGTH),
+            "--stats_json", "tmp/barcode_cluster_stats.json",
         ],
         output_dir,
     )
@@ -218,6 +343,17 @@ def main() -> None:
             str(args.analysis_workers),
             "--min_cells_per_taxon",
             str(args.min_cells_per_taxon),
+            "--min_16s_reads", str(config.MIN_16S_READS),
+            "--max_contam", str(config.MAX_TAXONOMY_CONTAMINATION),
+            "--p_match", str(config.MLE_P_MATCH),
+            "--p_none", str(config.MLE_P_NONE),
+            "--p_error", str(config.MLE_P_ERROR),
+            "--alpha_prior", str(config.MLE_ALPHA_PRIOR),
+            "--beta_prior", str(config.MLE_BETA_PRIOR),
+            "--min_confidence", str(config.MLE_MIN_CONFIDENCE),
+            "--min_noise_reads", str(config.MLE_MIN_NOISE_READS),
+            "--noise_cutoff_ratio", str(config.MLE_NOISE_CUTOFF_RATIO),
+            "--stats_json", "tmp/barcode_filter_stats.json",
         ],
         output_dir,
     )
@@ -238,6 +374,8 @@ def main() -> None:
             "tmp/16s_r1_primer_starts.tsv",
             "--primers_file",
             str(primers),
+            "--filter_corrupted", "false",
+            "--stats_json", "tmp/asv_stats.json",
         ],
         output_dir,
     )
@@ -250,6 +388,7 @@ def main() -> None:
             "tmp/asv_barcode_summary.tsv",
             "--primers_file",
             str(primers),
+            "--alpha", str(config.TARGET_BACKGROUND_ALPHA),
         ],
         output_dir,
     )
@@ -273,6 +412,17 @@ def main() -> None:
             str(primers),
             "--filtered_sub_arg_barcode_summary_tsv",
             "reports/cell_target_matrix.tsv",
+            "--alpha", str(config.TARGET_SEQUENCE_ALPHA),
+            "--max_shift_sub_arg", str(config.TARGET_SEQUENCE_MAX_SHIFT),
+            "--max_mm_sub_arg", str(config.TARGET_SEQUENCE_MAX_MISMATCHES),
+            "--p_match", str(config.MLE_P_MATCH),
+            "--p_none", str(config.MLE_P_NONE),
+            "--p_error", str(config.MLE_P_ERROR),
+            "--alpha_prior", str(config.MLE_ALPHA_PRIOR),
+            "--beta_prior", str(config.MLE_BETA_PRIOR),
+            "--min_confidence", str(config.MLE_MIN_CONFIDENCE),
+            "--min_noise_reads", str(config.MLE_MIN_NOISE_READS),
+            "--noise_cutoff_ratio", str(config.MLE_NOISE_CUTOFF_RATIO),
         ]
         if reference is not None:
             sequence_command.append("--include_all_targets")
@@ -361,7 +511,42 @@ def main() -> None:
         ])
     _run_step("Export JSONL", export_command, output_dir)
 
-    print(f"\nDoTA-Seq Analyzer complete: {output_dir}", flush=True)
+    canonical_command = [
+        python, script("canonical_results.py"),
+        "--runtime-config", "tmp/runtime_config.json",
+        "--raw-cell-table", "tmp/asv_barcode_summary.tsv",
+        "--filtered-counts", "tmp/filtered_counts_summary_arg.tsv",
+        "--final-cell-table", "reports/cell_target_matrix.tsv",
+        "--global-asv", "tmp/global_asv.tsv",
+        "--read-qc-stats", "tmp/read_qc_stats.json",
+        "--barcode-cluster-stats", "tmp/barcode_cluster_stats.json",
+        "--barcode-filter-stats", "tmp/barcode_filter_stats.json",
+        "--asv-stats", "tmp/asv_stats.json",
+        "--manifest", "tmp/16s_r1_primer_starts.tsv",
+        "--packet-16s", "tmp/packets_16s",
+        "--packet-target", "tmp/packets_arg",
+        "--packet-unclassified", "tmp/packets_unclassified",
+        "--target-filter-stats", "tmp/stats_filtering_summary_arg.tsv",
+        "--staging-dir", f"tmp/canonical.{run_id}",
+        "--output-dir", ".",
+    ]
+    if reconstruction_requested:
+        canonical_command.extend([
+            "--sequence-list", "tmp/sub_arg_seqs_list.txt",
+            "--sequence-qc", "tmp/extra_mle_info_sub_arg.tsv",
+        ])
+    if pv_requested:
+        canonical_command.extend([
+            "--phase-variation", "reports/cell_phase_variation.tsv",
+        ])
+    if reference is not None:
+        canonical_command.extend([
+            "--reference-matches", "reports/reference_matches.tsv",
+        ])
+    _run_step("Build and validate canonical results", canonical_command, output_dir)
+
+    os.replace(output_dir, requested_output_dir)
+    print(f"\nDoTA-Seq Analyzer complete: {requested_output_dir}", flush=True)
 
 
 if __name__ == "__main__":

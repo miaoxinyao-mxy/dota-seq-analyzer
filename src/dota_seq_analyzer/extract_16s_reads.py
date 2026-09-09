@@ -4,15 +4,17 @@ import sys
 # 2026-08-28: Exit non-zero when a required stage input is missing.
 # Reason: the public CLI uses subprocess check=True to stop failed stages.
 from helper_functions import open_maybe_gzip, ensure_output_directories
+from algorithm_config import (
+    PRIMER_MAX_MISMATCHES, PRIMER_MAX_SHIFT, R2_PRIMER_START,
+    VALID_16S_R1_STARTS,
+)
 import argparse
 import multiprocessing
 import os
 
 EXTRACTION_CHUNK_SIZE = 2048
 _16S_WORKER_CONFIG = None
-# 2026-09-08: Support any 0–9 bp 16S R1 random-base stagger by default.
-# Reason: the public pipeline should not require one laboratory's stagger panel.
-VALID_16S_R1_STARTS = tuple(range(10))
+# 2026-09-08: Valid starts are shared with run metadata through algorithm_config.
 
 def determine_16s_primers(primers_filename: str) -> Tuple[str, str]:
     """Obtain the R1 & R2 primers for the 16s gene"""
@@ -399,9 +401,9 @@ def main():
     parser.add_argument("--kraken_r1_only_16s_fastq", type=str, default="tmp/kraken_R1.fastq")
     parser.add_argument("--kraken_r2_only_16s_fastq", type=str, default="tmp/kraken_R2.fastq")
     parser.add_argument("--r1_16s_manifest", type=str, default="tmp/16s_r1_primer_starts.tsv")
-    parser.add_argument("--max_shift_primer", type=int, default=4)
-    parser.add_argument("--max_mm_primer", type=int, default=4)
-    parser.add_argument("--primer_start_num", type=int, default=42)
+    parser.add_argument("--max_shift_primer", type=int, default=PRIMER_MAX_SHIFT)
+    parser.add_argument("--max_mm_primer", type=int, default=PRIMER_MAX_MISMATCHES)
+    parser.add_argument("--primer_start_num", type=int, default=R2_PRIMER_START)
     parser.add_argument("-@", "--threads", dest="analysis_workers", type=int, default=1, metavar="INT")
 
     args = parser.parse_args()

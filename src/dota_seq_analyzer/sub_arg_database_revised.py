@@ -9,13 +9,20 @@ import os
 import argparse
 import sys
 import json
+from algorithm_config import (
+    MLE_ALPHA_PRIOR, MLE_BETA_PRIOR, MLE_MIN_CONFIDENCE,
+    MLE_MIN_NOISE_READS, MLE_NOISE_CUTOFF_RATIO, MLE_P_ERROR, MLE_P_MATCH,
+    MLE_P_NONE, TARGET_R1_END, TARGET_R1_START, TARGET_R2_END,
+    TARGET_R2_START, TARGET_SEQUENCE_ALPHA, TARGET_SEQUENCE_MAX_MISMATCHES,
+    TARGET_SEQUENCE_MAX_SHIFT,
+)
 
 # 1-based extraction coordinates to accurately truncate and merge R1/R2 reads 
 # while safely skipping the 20bp cell barcode sequence at the start of R2, as well as the ~20bp overlap sequence.
 # 2026-08-28: Match the sub-locus core endpoints to the ASV core endpoints.
 # Reason: both analyses should use the same paired-read sequence region.
-R1_START, R1_END = 30, 120
-R2_START, R2_END = 70, 120
+R1_START, R1_END = TARGET_R1_START, TARGET_R1_END
+R2_START, R2_END = TARGET_R2_START, TARGET_R2_END
 
 def create_sub_arg_barcode_summary(
     filtered_counts_summary_arg_tsv: str, 
@@ -27,7 +34,8 @@ def create_sub_arg_barcode_summary(
     filtered_stats_cells_per_sub_arg_tsv: str, extra_mle_info_sub_arg_tsv,
     p_match, p_none, p_error, alpha_prior, beta_prior,
     min_confidence, min_noise_reads, noise_cutoff_ratio, include_all_targets=False,
-    alpha=0.05, max_shift_sub_arg=2, max_mm_sub_arg=0):
+    alpha=TARGET_SEQUENCE_ALPHA, max_shift_sub_arg=TARGET_SEQUENCE_MAX_SHIFT,
+    max_mm_sub_arg=TARGET_SEQUENCE_MAX_MISMATCHES):
 
     """
     Main function for creating the sub-ARG barcode summary.
@@ -725,19 +733,19 @@ def main():
     parser.add_argument("--sub_arg_seqs_list", type=str, default="tmp/sub_arg_seqs_list.txt")
     parser.add_argument("--filtered_sub_arg_barcode_summary_tsv", type=str, default="reports/cell_target_matrix.tsv")
     parser.add_argument("--filtered_stats_cells_per_sub_arg_tsv", type=str, default="tmp/filtered_stats_cells_per_sub_arg.tsv")
-    parser.add_argument("--alpha", type=float, default=0.05)
-    parser.add_argument("--max_shift_sub_arg", type=int, default=2)
-    parser.add_argument("--max_mm_sub_arg", type=int, default=0)
+    parser.add_argument("--alpha", type=float, default=TARGET_SEQUENCE_ALPHA)
+    parser.add_argument("--max_shift_sub_arg", type=int, default=TARGET_SEQUENCE_MAX_SHIFT)
+    parser.add_argument("--max_mm_sub_arg", type=int, default=TARGET_SEQUENCE_MAX_MISMATCHES)
     parser.add_argument("--extra_mle_info_sub_arg_tsv", type=str, default="tmp/extra_mle_info_sub_arg.tsv")
     
-    parser.add_argument("--p_match", type=float, default=0.90)
-    parser.add_argument("--p_none", type=float, default=0.09)
-    parser.add_argument("--p_error", type=float, default=0.01)
-    parser.add_argument("--alpha_prior", type=float, default=1.0)
-    parser.add_argument("--beta_prior", type=float, default=9.0)
-    parser.add_argument("--min_confidence", type=float, default=0.95)
-    parser.add_argument("--min_noise_reads", type=int, default=2)
-    parser.add_argument("--noise_cutoff_ratio", type=float, default=0.05)
+    parser.add_argument("--p_match", type=float, default=MLE_P_MATCH)
+    parser.add_argument("--p_none", type=float, default=MLE_P_NONE)
+    parser.add_argument("--p_error", type=float, default=MLE_P_ERROR)
+    parser.add_argument("--alpha_prior", type=float, default=MLE_ALPHA_PRIOR)
+    parser.add_argument("--beta_prior", type=float, default=MLE_BETA_PRIOR)
+    parser.add_argument("--min_confidence", type=float, default=MLE_MIN_CONFIDENCE)
+    parser.add_argument("--min_noise_reads", type=int, default=MLE_MIN_NOISE_READS)
+    parser.add_argument("--noise_cutoff_ratio", type=float, default=MLE_NOISE_CUTOFF_RATIO)
     # 2026-08-10: Permit the CLI to reconstruct every target for optional reference matching.
     # Reason: reference availability is independent of the per-target PV mode.
     parser.add_argument("--include_all_targets", action="store_true")

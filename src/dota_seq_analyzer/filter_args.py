@@ -5,6 +5,7 @@ from helper_functions import get_arg_names, ensure_output_directories
 import argparse
 import sys
 import os
+from algorithm_config import TARGET_BACKGROUND_ALPHA
 
 def find_poisson_survival_probability(k, lambda_) -> float:
     """
@@ -34,7 +35,7 @@ def find_poisson_survival_probability(k, lambda_) -> float:
 def filter_args(
     asv_barcode_summary_tsv: str, primers_file,
     filtered_counts_summary_tsv: str, filtered_binary_summary_tsv: str, stats_filtering_summary_tsv: str, 
-    alpha: float = 0.05):
+    alpha: float = TARGET_BACKGROUND_ALPHA):
     """
     Remove background ARG noise - that is, cells with too few reads of a given ARG should not be considered to have that ARG.
     Hence nullify these low ARG read count values in the barcode summary.
@@ -129,7 +130,7 @@ def main():
     parser.add_argument("--filtered_counts_summary_arg_tsv", type=str, default="tmp/filtered_counts_summary_arg.tsv")
     parser.add_argument("--filtered_binary_summary_arg_tsv", type=str, default="tmp/filtered_binary_summary_arg.tsv")
     parser.add_argument("--stats_filtering_summary_arg_tsv", type=str, default="tmp/stats_filtering_summary_arg.tsv")
-    parser.add_argument("--alpha", type=float, default=0.05)
+    parser.add_argument("--alpha", type=float, default=TARGET_BACKGROUND_ALPHA)
 
     args = parser.parse_args()
 
