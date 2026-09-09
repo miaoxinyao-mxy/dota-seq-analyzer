@@ -13,9 +13,12 @@ git lfs install
 git lfs pull
 conda env create -f environment.yml
 tar -xzf database/dota-seq-analyzer-taxonomy-db.tar.gz -C database
-conda activate dota-seq-analyzer
-python -m pip install -e .
+conda run -n dota-seq-analyzer python -m pip install -e .
+conda run -n dota-seq-analyzer dota-seq-analyzer --help
 ```
+
+If your interactive shell has already been initialized for Conda, you may
+optionally run `conda activate dota-seq-analyzer` before using the software.
 
 ## Primer file
 
