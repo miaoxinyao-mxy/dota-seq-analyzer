@@ -545,6 +545,19 @@ def main() -> None:
         ])
     _run_step("Build and validate canonical results", canonical_command, output_dir)
 
+    # 2026-09-09: Generate Phase 2A comparison reports only from canonical v3 files.
+    # Reason: canonical-derived reports must be reconciled before replacing legacy report writers.
+    _run_step(
+        "Generate canonical-derived comparison reports",
+        [
+            python,
+            script("canonical_reports.py"),
+            "--canonical-dir", ".",
+            "--output-dir", ".phase2a_reports",
+        ],
+        output_dir,
+    )
+
     os.replace(output_dir, requested_output_dir)
     print(f"\nDoTA-Seq Analyzer complete: {requested_output_dir}", flush=True)
 
