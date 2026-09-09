@@ -17,6 +17,10 @@ conda run -n dota-seq-analyzer python -m pip install -e .
 conda run -n dota-seq-analyzer dota-seq-analyzer --help
 ```
 
+The bundled GreenGenes2-based Kraken2 taxonomy database is tracked with Git LFS,
+extracted by the command above, and discovered automatically by the pipeline.
+Use `--taxonomy-db` only to select a different extracted Kraken2 database.
+
 If your interactive shell has already been initialized for Conda, you may
 optionally run `conda activate dota-seq-analyzer` before using the software.
 
@@ -57,7 +61,16 @@ Run `dota-seq-analyzer --help` for database overrides, parallel analysis, and fi
 
 ## Output
 
-The primary results are `dota_seq_analyzer_results.jsonl` and `reports/cell_target_matrix.tsv`. Phase-variation calls are written to `reports/cell_phase_variation.tsv`, and optional BLAST matches to `reports/reference_matches.tsv`.
+The authoritative v3.0.0 results are:
+
+- `cells.jsonl`: one canonical record per surviving cell, including taxonomy, ASV assignment, QC fields, and target calls.
+- `asvs.jsonl`: canonical ASV identifiers, core sequences, and final surviving-cell counts.
+- `run_summary.json`: run identity, inputs, parameters, read/cell filtering counts, and result totals.
+- `target_sequences.jsonl`: canonical reconstructed target-sequence clusters when sequence reconstruction is performed; otherwise this file is not generated.
+
+These files share one `run_id` and are schema- and relationship-validated before the completed output directory is published. The schema contract is documented in [`docs/canonical-schema-v3.0.0.md`](docs/canonical-schema-v3.0.0.md).
+
+`dota_seq_analyzer_results.jsonl` is retained as a legacy compatibility export. Files under `reports/`, including `cell_target_matrix.tsv`, are derived human-readable tables rather than the canonical source of truth. Phase-variation calls are written to `reports/cell_phase_variation.tsv`, and optional BLAST matches to `reports/reference_matches.tsv`.
 
 Intermediate files are written to `tmp/`, report tables to `reports/`, and figures to `figures/`.
 

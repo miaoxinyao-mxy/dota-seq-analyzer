@@ -185,20 +185,41 @@ def make_primer_balance_figure(
     # note that this ratio calculation is done only for the barcodes that are classified as having that specific ARG
     arg_ratios = get_ARG_to_16s_ratios(asv_barcode_summary_no_sub_args_tsv, primers_file)
 
+    # 2026-09-09: Write an explanatory figure when no cells survive to primer-balance plotting.
+    # Reason: a valid empty analysis previously called plt.subplots(0, 1) and aborted the pipeline.
+    if not arg_ratios:
+        fig, ax = plt.subplots(figsize=(8, 3))
+        ax.axis("off")
+        ax.text(
+            0.5,
+            0.5,
+            "No surviving target-positive cells to plot.",
+            ha="center",
+            va="center",
+        )
+        fig.savefig(primer_balance_figure, bbox_inches="tight", pad_inches=0.3, dpi=figure_dpi)
+        plt.close(fig)
+        return
+
     # plot the graphs
     fig, axs = plt.subplots(len(arg_ratios), 1, figsize = (10, len(arg_ratios)))
     fig.tight_layout()
     i = 0
     for arg in arg_ratios:
         ax = axs[i]
-        ax.hist(arg_ratios[arg], bins = 100, range = (0.1, 1), color = c_palette[i % 13])
-        ax.set_yscale("log")
+        histogram_counts, _, _ = ax.hist(
+            arg_ratios[arg], bins=100, range=(0.1, 1), color=c_palette[i % 13])
+        # 2026-09-09: Use logarithmic scaling only when the plotted range contains observations.
+        # Reason: switching an all-zero histogram to log scale emits a misleading Matplotlib warning.
+        if np.any(histogram_counts > 0):
+            ax.set_yscale("log")
         ax.set_title(arg)
         ax.set_xticks([0,1], ["16S-only", "target-only"])
         #ax.set_yticklabels([0])
         i += 1
 
     plt.savefig(primer_balance_figure, bbox_inches = "tight", pad_inches = 0.3, dpi = figure_dpi)
+    plt.close(fig)
 
 # ===============================================================================================
 
@@ -364,6 +385,13 @@ def jackpottocurve(fig, ax, barsize, type_of_reads, vline):
     # prepare data to plot the jackpottocurve
     X = np.array(barsize) # make an np array of the data so we can use the various np functions
     X.sort()
+    # 2026-09-09: Render an explanatory panel for empty or all-zero group-size data.
+    # Reason: cumulative normalization and logarithmic scaling are undefined without positive counts.
+    if X.size == 0 or X.sum() <= 0:
+        ax.axis("off")
+        ax.set_title(f"{type_of_reads} Reads")
+        ax.text(0.5, 0.5, "No positive barcode-group sizes to plot.", ha="center", va="center")
+        return
     X_lorenz = X.cumsum() / X.sum() # turns it into a cumsum percentage (for y-axis)
     X_lorenz = np.insert(X_lorenz, 0, 0) # insert the 0,0 point
     X = np.insert(X, 0, 0) # insert 0,0 point for X as well
@@ -372,7 +400,13 @@ def jackpottocurve(fig, ax, barsize, type_of_reads, vline):
     ax.scatter(X, X_lorenz, 
                 marker='o', color='indigo', s=100) # x axis is cumulative barcode number, yaxis is cumulative total # reads
     ax.set_title(f"{type_of_reads} Reads")
-    ax.set_xlim((1,max(barsize)))
+    maximum_group_size = max(barsize)
+    # 2026-09-09: Give a one-read-only dataset a non-degenerate positive x-axis range.
+    # Reason: xlim=(1, 1) triggers a misleading singular-axis warning on valid small runs.
+    if maximum_group_size == 1:
+        ax.set_xlim((0.9, 1.1))
+    else:
+        ax.set_xlim((1, maximum_group_size))
     ax.set_xscale("log", base=10)
     ax.set_xlabel("Bargroups Ranked by Size") # number of reads per barcode
     ax.set_ylabel("Cumulative Reads Used")
