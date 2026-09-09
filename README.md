@@ -37,15 +37,18 @@ Leave `Mode` blank for standard target detection. Use `ssr` for phase-variation 
 ## Run
 
 ```bash
-dota-seq-analyzer -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results -@ 8
+conda run -n dota-seq-analyzer dota-seq-analyzer -1 reads1.fastq -2 reads2.fastq -p primers.csv -o results -@ 8
 ```
 
 Analysis is serial by default. For larger datasets, use `-@ N` or `--threads N` to parallelize the sequential analysis stages across CPU cores; 8 is a reasonable starting point on a multi-core workstation.
 
+After running `conda activate dota-seq-analyzer`, you may omit the
+`conda run -n dota-seq-analyzer` prefix from pipeline commands.
+
 To annotate reconstructed target sequences with a reference FASTA:
 
 ```bash
-dota-seq-analyzer -1 reads1.fastq -2 reads2.fastq -p primers.csv -r reference.fa -o results
+conda run -n dota-seq-analyzer dota-seq-analyzer -1 reads1.fastq -2 reads2.fastq -p primers.csv -r reference.fa -o results
 ```
 
 An optional AMR reference is included in `database/amr-reference-db.tar.gz`.
