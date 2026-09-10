@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use DoTA-Seq Analyzer, please cite the versioned software release and the underlying DoTA-Seq method."
+title: "DoTA-Seq Analyzer"
+type: software
+version: 0.1.0
+abstract: "Single-cell profiling of targeted microbial genes and phase variation."
+authors:
+  - family-names: Miao
+    given-names: Xinyao
+    email: miaoxinyao.xjtu@gmail.com
+  - family-names: Yuen
+    given-names: Julianna
+    email: juliannayuen07@gmail.com
+  - family-names: Lan
+    given-names: Freeman
+    email: freeman.lan@utoronto.ca
+repository-code: "https://github.com/miaoxinyao-mxy/dota-seq-analyzer"
+license: MIT

@@ -2,6 +2,7 @@
 # Reason: source releases should retain reproducible test inputs without committing regenerated files.
 __pycache__/
 *.py[cod]
+dist/
 runs/
 database/arg_db/
 

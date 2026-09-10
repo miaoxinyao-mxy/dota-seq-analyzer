@@ -54,9 +54,17 @@ def _git_commit(source_root: Path):
 
 
 def main() -> None:
+    source_dir = Path(__file__).resolve().parent
+    source_root = source_dir.parents[1]
     parser = argparse.ArgumentParser(
         prog="dota-seq-analyzer",
         description="Profile targeted genes and phase variation in single-cell DoTA-Seq data.",
+    )
+    # 2026-09-10: Report the installed software version from the existing metadata source.
+    # Reason: versioned releases should be identifiable without starting an analysis.
+    parser.add_argument(
+        "--version", action="version",
+        version=f"%(prog)s {_software_version(source_root)}",
     )
     parser.add_argument("-1", "--r1", required=True, help="R1 FASTQ file")
     parser.add_argument("-2", "--r2", required=True, help="R2 FASTQ file")
@@ -80,8 +88,6 @@ def main() -> None:
     r2 = Path(args.r2).expanduser().resolve()
     primers = Path(args.primers).expanduser().resolve()
     requested_output_dir = Path(args.output).expanduser().resolve()
-    source_dir = Path(__file__).resolve().parent
-    source_root = source_dir.parents[1]
     run_id = str(uuid.uuid4())
     if requested_output_dir.exists():
         parser.error(f"output directory already exists: {requested_output_dir}")

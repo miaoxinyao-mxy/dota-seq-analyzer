@@ -1,5 +1,7 @@
 # DoTA-Seq Analyzer
 
+[![Unit tests](https://github.com/miaoxinyao-mxy/dota-seq-analyzer/actions/workflows/tests.yml/badge.svg)](https://github.com/miaoxinyao-mxy/dota-seq-analyzer/actions/workflows/tests.yml)
+
 *Single-cell profiling of targeted microbial genes and phase variation*
 
 DoTA-Seq Analyzer links primer-defined targets to individual bacterial cells and their taxonomic classifications in single-cell DoTA-Seq data.
@@ -107,6 +109,10 @@ python PrimerPicker/primer_picker.py targets.fa --outdir primer_picker_results -
 The main output is `primer_picker_results/top-primer-sets.tsv`.
 
 ## Citation
+
+Software releases and canonical result schemas are versioned independently:
+DoTA-Seq Analyzer `v0.1.0` writes canonical schema `v3.0.0`. Cite the
+versioned software release using the metadata in [CITATION.cff](CITATION.cff).
 
 DoTA-Seq Analyzer was developed for analysis of single-cell targeted sequencing data based on the DoTA-Seq framework. For the underlying DoTA-Seq method, please cite:
 
