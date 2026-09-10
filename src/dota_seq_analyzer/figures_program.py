@@ -7,8 +7,10 @@ import pandas as pd
 from typing import List, Dict, Tuple
 from collections import Counter
 from helper_functions import get_arg_names, ensure_output_directories
+import json
 import os
 import argparse
+from pathlib import Path
 import textwrap
 import sys
 
@@ -24,25 +26,47 @@ def make_figures(
     b_with_ids: str, asv_arg_table_tsv: str,  
     asv_arg_figure: str, barcode_group_size_figure: str, primer_balance_figure: str,
     first_gene_column_num: int, global_mle_tax_tsv: str, global_asv_tsv: str = None,
-    arg_threshold: float = 0.01, min_cells_per_asv: int = 30, figure_dpi: int = 300):
+    arg_threshold: float = 0.01, min_cells_per_asv: int = 30, figure_dpi: int = 300,
+    canonical_dir: str = None):
     """Main method for making all 3 output figures"""
         
     use_asvs = determine_use_asvs(use_asvs_str) # convert use_asvs from yes/no into a bool True/False value
 
-    # 0) Non-figure related: write global taxonomic classifications file
-    write_global_tax_classification_file(final_asv_barcode_summary_tsv, global_mle_tax_tsv)
+    # 2026-09-10: Preserve the taxonomy-count intermediate from the active data source.
+    # Reason: canonical production figures must not require a legacy report TSV.
+    if canonical_dir is not None:
+        write_global_tax_classification_from_canonical(
+            canonical_dir, global_mle_tax_tsv)
+    else:
+        write_global_tax_classification_file(
+            final_asv_barcode_summary_tsv, global_mle_tax_tsv)
 
-    # 1) ASV-ARG Heat Map
-    make_asv_arg_table(asv_arg_figure, final_asv_barcode_summary_tsv, asv_arg_table_tsv, 
-        min_cells_per_asv, arg_threshold, figure_dpi, first_gene_column_num, 
-        use_asvs, global_mle_tax_tsv, global_asv_tsv)
-    
+    # 2026-09-09: Derive final-result figures directly from canonical v3 when available.
+    # Reason: canonical results, rather than legacy TSVs, are the authoritative final data.
+    if canonical_dir is not None:
+        make_asv_target_figure_from_canonical(
+            asv_arg_figure, canonical_dir, min_cells_per_asv,
+            arg_threshold, figure_dpi)
+    else:
+        # Keep the legacy path temporarily for data-level regression comparisons.
+        make_asv_arg_table(asv_arg_figure, final_asv_barcode_summary_tsv, asv_arg_table_tsv,
+            min_cells_per_asv, arg_threshold, figure_dpi, first_gene_column_num,
+            use_asvs, global_mle_tax_tsv, global_asv_tsv)
+
     # 2) Barcode Group Size QC
-    make_barcode_group_size_figure(barcode_group_size_figure, 
+    # 2026-09-09: This intentionally remains dependent on pre-filter tmp data.
+    # Reason: canonical v3 contains surviving cells, not rejected barcode-group distributions.
+    make_barcode_group_size_figure(barcode_group_size_figure,
         unfiltered_barcode_summary_tsv, primers_file, b_with_ids, figure_dpi)
-    
-    # 3) Primer Balance (ARG vs 16s primers) QC 
-    make_primer_balance_figure(primer_balance_figure, asv_barcode_summary_no_sub_args_tsv, primers_file, figure_dpi)
+
+    # 3) Primer Balance (target vs 16S primers) QC
+    if canonical_dir is not None:
+        make_primer_balance_figure_from_canonical(
+            primer_balance_figure, canonical_dir, figure_dpi)
+    else:
+        make_primer_balance_figure(
+            primer_balance_figure, asv_barcode_summary_no_sub_args_tsv,
+            primers_file, figure_dpi)
 
 # ===============================================================================================
 
@@ -65,6 +89,15 @@ def make_asv_arg_table(
         asv_arg_table_tsv, min_cells_per_asv, first_gene_column_num, 
         global_mle_tax_tsv, global_asv_tsv)
 
+    _render_asv_target_figure(
+        df_asv_arg, final_gene_names, asv_arg_figure, arg_threshold,
+        figure_dpi, use_asvs)
+
+
+def _render_asv_target_figure(
+    df_asv_arg: pd.DataFrame, final_gene_names: List[str],
+    asv_arg_figure: str, arg_threshold: float, figure_dpi: int,
+    use_asvs: bool):
     # determine y-axis labels & ticks, based on whether or not ASVs are being used
     if use_asvs:
         y_axis_label = "ASV Taxonomic Classification"
@@ -138,6 +171,113 @@ def make_asv_arg_table(
     # 2026-08-27: Do not open an interactive plotting window in the pipeline.
     # Reason: figures are already written with savefig, and headless runs must not block.
 
+# 2026-09-09: Canonical v3 readers for final-result figures.
+# Reason: figure calculations should use the authoritative final cell and ASV records.
+CANONICAL_TAXONOMY_RANKS = (
+    ("R1", "domain"), ("P", "phylum"), ("C", "class"),
+    ("O", "order"), ("F", "family"), ("G", "genus"),
+    ("S", "species"),
+)
+
+
+def _read_canonical_jsonl(path: Path) -> List[dict]:
+    with path.open(encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
+
+
+def _canonical_taxonomy_lineage(ranks: dict) -> str:
+    return " | ".join(
+        f"{code} - {ranks[field] if ranks[field] is not None else 'None'}"
+        for code, field in CANONICAL_TAXONOMY_RANKS)
+
+
+def _canonical_asv_sort_key(asv: dict) -> int:
+    return int(asv["asv_id"].rsplit("_", 1)[1])
+
+
+def load_canonical_cells(canonical_dir: str) -> Tuple[dict, List[dict]]:
+    canonical_path = Path(canonical_dir)
+    with (canonical_path / "run_summary.json").open(encoding="utf-8") as handle:
+        run_summary = json.load(handle)
+    cells = _read_canonical_jsonl(canonical_path / "cells.jsonl")
+    run_id = run_summary["run_id"]
+    if any(record.get("run_id") != run_id for record in cells):
+        raise ValueError("Canonical cell figure inputs contain inconsistent run IDs")
+    return run_summary, cells
+
+
+def load_canonical_figure_data(canonical_dir: str) -> Tuple[dict, List[dict], List[dict]]:
+    canonical_path = Path(canonical_dir)
+    run_summary, cells = load_canonical_cells(canonical_dir)
+    asvs = _read_canonical_jsonl(canonical_path / "asvs.jsonl")
+    if any(record.get("run_id") != run_summary["run_id"] for record in asvs):
+        raise ValueError("Canonical ASV figure inputs contain inconsistent run IDs")
+    return run_summary, cells, asvs
+
+
+def write_global_tax_classification_from_canonical(
+    canonical_dir: str, global_mle_tax_tsv: str):
+    """Write the existing taxonomy-count intermediate from canonical cells."""
+    _, cells = load_canonical_cells(canonical_dir)
+    taxonomy_counts = Counter(
+        _canonical_taxonomy_lineage(cell["taxonomy"]["ranks"])
+        for cell in cells)
+    with open(global_mle_tax_tsv, "w") as handle:
+        handle.write("MLE_Taxonomic_Classification\tCell_Count\n")
+        for taxonomy, cell_count in taxonomy_counts.most_common():
+            handle.write(f"{taxonomy}\t{cell_count}\n")
+
+
+def create_asv_target_matrix_from_canonical(
+    canonical_dir: str, min_cells_per_asv: int = 30) -> Tuple[pd.DataFrame, List[str]]:
+    """Build the existing ASV-by-target figure matrix from canonical v3 records."""
+    run_summary, cells, asvs = load_canonical_figure_data(canonical_dir)
+    target_names = [item["target_name"] for item in run_summary["target_panel"]]
+    asv_ids = [
+        item["asv_id"]
+        for item in sorted(asvs, key=_canonical_asv_sort_key)
+        if item["final_surviving_cell_count"] >= min_cells_per_asv
+    ]
+    cells_by_asv = {asv_id: [] for asv_id in asv_ids}
+    for cell in cells:
+        asv_id = cell["asv"]["asv_id"]
+        if asv_id in cells_by_asv:
+            cells_by_asv[asv_id].append(cell)
+
+    rows = []
+    for asv_id in asv_ids:
+        asv_cells = cells_by_asv[asv_id]
+        taxonomy = Counter(
+            _canonical_taxonomy_lineage(cell["taxonomy"]["ranks"])
+            for cell in asv_cells).most_common(1)[0][0]
+        positive_counts = dict.fromkeys(target_names, 0)
+        for cell in asv_cells:
+            for target in cell["targets"]:
+                target_name = target["target_name"]
+                if target_name in positive_counts and target["filtered_read_count"] != 0:
+                    positive_counts[target_name] += 1
+        rows.append([
+            taxonomy,
+            *(positive_counts[target_name] / len(asv_cells)
+              for target_name in target_names),
+        ])
+
+    matrix = pd.DataFrame(
+        rows, index=asv_ids, columns=["Predicted taxonomy", *target_names])
+    return matrix, target_names
+
+
+def make_asv_target_figure_from_canonical(
+    asv_target_figure: str, canonical_dir: str, min_cells_per_asv: int,
+    target_threshold: float, figure_dpi: int):
+    """Render the existing ASV-target heatmap directly from canonical v3."""
+    matrix, target_names = create_asv_target_matrix_from_canonical(
+        canonical_dir, min_cells_per_asv)
+    _render_asv_target_figure(
+        matrix, target_names, asv_target_figure, target_threshold,
+        figure_dpi, True)
+
+
 def make_barcode_group_size_figure(
     barcode_group_size_figure, unfiltered_barcode_summary_tsv, 
     primers_file, b_with_ids, figure_dpi):
@@ -175,19 +315,22 @@ def make_primer_balance_figure(
     Purpose: determine if the ratio of ARG to 16s primers needs to be adjusted, for any of the ARGs
     Adapted code from original dota-seq paper
     """
+    arg_ratios = get_ARG_to_16s_ratios(
+        asv_barcode_summary_no_sub_args_tsv, primers_file)
+    _render_primer_balance_figure(
+        primer_balance_figure, arg_ratios, figure_dpi)
+
+
+def _render_primer_balance_figure(
+    primer_balance_figure: str, target_ratios: Dict[str, List[float]],
+    figure_dpi: int):
     # colour palette for graphs
     c_palette = ["#EE7032", "#FC8609", "#F5A232", "#F7DD48", "#C4E54C","#8CC860",
             "#6CC860", "#5ACCAA", "#52CECE", "#4DAEEE", "#5877D6", "#C186F1", "#D441D6"]
 
-    # obtain the list of different primer balance ratios, for each ARG that has a non-zero number of cells associated with it
-    # ratio calculation: (# of ARG#1 reads) / (# of ARG#1 reads + # of 16s reads)  
-    # (where "ARG#1" represents whichever of the ARGs you're currently looking at)
-    # note that this ratio calculation is done only for the barcodes that are classified as having that specific ARG
-    arg_ratios = get_ARG_to_16s_ratios(asv_barcode_summary_no_sub_args_tsv, primers_file)
-
     # 2026-09-09: Write an explanatory figure when no cells survive to primer-balance plotting.
     # Reason: a valid empty analysis previously called plt.subplots(0, 1) and aborted the pipeline.
-    if not arg_ratios:
+    if not target_ratios:
         fig, ax = plt.subplots(figsize=(8, 3))
         ax.axis("off")
         ax.text(
@@ -202,18 +345,18 @@ def make_primer_balance_figure(
         return
 
     # plot the graphs
-    fig, axs = plt.subplots(len(arg_ratios), 1, figsize = (10, len(arg_ratios)))
+    fig, axs = plt.subplots(len(target_ratios), 1, figsize = (10, len(target_ratios)))
     fig.tight_layout()
     i = 0
-    for arg in arg_ratios:
+    for target in target_ratios:
         ax = axs[i]
         histogram_counts, _, _ = ax.hist(
-            arg_ratios[arg], bins=100, range=(0.1, 1), color=c_palette[i % 13])
+            target_ratios[target], bins=100, range=(0.1, 1), color=c_palette[i % 13])
         # 2026-09-09: Use logarithmic scaling only when the plotted range contains observations.
         # Reason: switching an all-zero histogram to log scale emits a misleading Matplotlib warning.
         if np.any(histogram_counts > 0):
             ax.set_yscale("log")
-        ax.set_title(arg)
+        ax.set_title(target)
         ax.set_xticks([0,1], ["16S-only", "target-only"])
         #ax.set_yticklabels([0])
         i += 1
@@ -471,30 +614,61 @@ def get_ARG_to_16s_ratios(filtered_counts_summary_tsv: str, primers_file: str):
     return arg_ratios
 
 
+def get_target_to_16s_ratios_from_canonical(canonical_dir: str) -> Dict[str, List[float]]:
+    """Calculate the existing primer-balance vectors from canonical raw counts."""
+    run_summary, cells = load_canonical_cells(canonical_dir)
+    target_names = [item["target_name"] for item in run_summary["target_panel"]]
+    target_ratios = {}
+    for target_name in target_names:
+        ratios = []
+        for cell in cells:
+            target = next(
+                (item for item in cell["targets"]
+                 if item["target_name"] == target_name), None)
+            raw_count = target["raw_read_count"] if target is not None else 0
+            if raw_count > 0:
+                total_16s = cell["taxonomy_evidence"]["total_16s_reads"]
+                ratios.append(raw_count / (raw_count + total_16s))
+        if ratios:
+            target_ratios[target_name] = ratios
+    return target_ratios
+
+
+def make_primer_balance_figure_from_canonical(
+    primer_balance_figure: str, canonical_dir: str, figure_dpi: int):
+    """Render the existing primer-balance plot directly from canonical v3."""
+    target_ratios = get_target_to_16s_ratios_from_canonical(canonical_dir)
+    _render_primer_balance_figure(
+        primer_balance_figure, target_ratios, figure_dpi)
+
+
 def main():
     parser = argparse.ArgumentParser()
   
     # take input parameters
     parser.add_argument("--use_asvs_str", type=str, required=True)
     parser.add_argument("--unfiltered_barcode_summary_tsv", type=str, required=True)
-    parser.add_argument("--final_asv_barcode_summary_tsv", type=str, required=True)
-    parser.add_argument("--asv_barcode_summary_no_sub_args_tsv", type=str, required=True)
+    parser.add_argument("--final_asv_barcode_summary_tsv", type=str)
+    parser.add_argument("--asv_barcode_summary_no_sub_args_tsv", type=str)
     parser.add_argument("--primers_file", type=str, required=True)
     parser.add_argument("--b_with_ids", type=str, required=True)
     # 2026-08-10: Route plotting summaries to tmp and final images to figures.
     # Reason: the aggregated taxa-by-target table is a plotting intermediate, not the cell-level result.
     parser.add_argument("--asv_arg_table_tsv", type=str, default="tmp/taxa_target_summary.tsv")
-    parser.add_argument("--global_asv_tsv", type=str, required=True)
+    parser.add_argument("--global_asv_tsv", type=str)
     parser.add_argument("--asv_arg_figure", type=str, default="figures/taxa_target_table.png")
     parser.add_argument("--barcode_group_size_figure", type=str, default="figures/barcode_group_size_qc.png")
     parser.add_argument("--primer_balance_figure", type=str, default="figures/primer_balance_qc.png")
-    parser.add_argument("--first_gene_column_num", type=int, required=True)
+    parser.add_argument("--first_gene_column_num", type=int)
     parser.add_argument("--global_mle_tax_tsv", type=str, default="tmp/global_mle_tax.tsv")
     parser.add_argument("--arg_threshold", type=float, default=0.01)
     # 2026-08-10: Keep the CLI default aligned with the 30-cell ASV visualization threshold.
     # Reason: command-line and direct function runs must use the same moderate-sample cutoff.
     parser.add_argument("--min_cells_per_asv", type=int, default=30)
-    parser.add_argument("--figure_dpi", type=int, default=300) 
+    parser.add_argument("--figure_dpi", type=int, default=300)
+    # 2026-09-09: Select canonical v3 as the source for final-result figures.
+    # Reason: production figures must no longer depend on derived final-result TSVs.
+    parser.add_argument("--canonical_dir")
     
     args = parser.parse_args()
 
@@ -509,22 +683,32 @@ def main():
     if not os.path.exists(args.unfiltered_barcode_summary_tsv):
         print(f"❌ Error: input file not found: {args.unfiltered_barcode_summary_tsv}")
         sys.exit(1)
-    if not os.path.exists(args.final_asv_barcode_summary_tsv):
-        print(f"❌ Error: input file not found: {args.final_asv_barcode_summary_tsv}")
-        sys.exit(1)
-    if not os.path.exists(args.asv_barcode_summary_no_sub_args_tsv):
-        print(f"❌ Error: input file not found: {args.asv_barcode_summary_no_sub_args_tsv}")
-        sys.exit(1)
     if not os.path.exists(args.primers_file):
         print(f"❌ Error: input file not found: {args.primers_file}")
         sys.exit(1)
     if not os.path.exists(args.b_with_ids):
         print(f"❌ Error: input file not found: {args.b_with_ids}")
         sys.exit(1)
-    # global_asv_tsv file only needs to exist if we're using ASVs
-    if args.use_asvs_str == "yes" and not os.path.exists(args.global_asv_tsv):
-        print(f"❌ Error: input file not found: {args.global_asv_tsv}")
-        sys.exit(1)
+    if args.canonical_dir is None:
+        legacy_inputs = [
+            args.final_asv_barcode_summary_tsv,
+            args.asv_barcode_summary_no_sub_args_tsv,
+        ]
+        if args.use_asvs_str == "yes":
+            legacy_inputs.append(args.global_asv_tsv)
+        if args.first_gene_column_num is None:
+            print("❌ Error: --first_gene_column_num is required for legacy figures")
+            sys.exit(1)
+        for legacy_path in legacy_inputs:
+            if legacy_path is None or not os.path.exists(legacy_path):
+                print(f"❌ Error: input file not found: {legacy_path}")
+                sys.exit(1)
+    else:
+        for canonical_name in ("cells.jsonl", "asvs.jsonl", "run_summary.json"):
+            canonical_path = Path(args.canonical_dir) / canonical_name
+            if not canonical_path.exists():
+                print(f"❌ Error: input file not found: {canonical_path}")
+                sys.exit(1)
 
     make_figures(
         args.use_asvs_str, args.unfiltered_barcode_summary_tsv, 
@@ -533,7 +717,8 @@ def main():
         args.b_with_ids, args.asv_arg_table_tsv,  
         args.asv_arg_figure, args.barcode_group_size_figure, args.primer_balance_figure,
         args.first_gene_column_num, args.global_mle_tax_tsv, args.global_asv_tsv,
-        args.arg_threshold, args.min_cells_per_asv, args.figure_dpi)
+        args.arg_threshold, args.min_cells_per_asv, args.figure_dpi,
+        args.canonical_dir)
 
 
 if __name__ == "__main__":

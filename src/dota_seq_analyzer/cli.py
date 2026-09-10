@@ -471,30 +471,6 @@ def main() -> None:
             ],
             output_dir,
         )
-    _run_step(
-        "Generate figures",
-        [
-            python,
-            script("figures_program.py"),
-            "--use_asvs_str",
-            "yes",
-            "--unfiltered_barcode_summary_tsv",
-            "tmp/unfiltered_barcode_summary.tsv",
-            "--final_asv_barcode_summary_tsv",
-            "reports/cell_target_matrix.tsv",
-            "--asv_barcode_summary_no_sub_args_tsv",
-            "tmp/asv_barcode_summary.tsv",
-            "--primers_file",
-            str(primers),
-            "--b_with_ids",
-            "tmp/b_with_ids.txt",
-            "--global_asv_tsv",
-            "tmp/global_asv.tsv",
-            "--first_gene_column_num",
-            "14",
-        ],
-        output_dir,
-    )
     export_command = [
         python,
         script("export_results.py"),
@@ -544,6 +520,27 @@ def main() -> None:
             "--reference-matches", "reports/reference_matches.tsv",
         ])
     _run_step("Build and validate canonical results", canonical_command, output_dir)
+
+    # 2026-09-09: Generate final-result figures after canonical validation.
+    # Reason: the ASV-target and primer-balance figures now read canonical v3 directly.
+    _run_step(
+        "Generate figures",
+        [
+            python,
+            script("figures_program.py"),
+            "--use_asvs_str",
+            "yes",
+            "--unfiltered_barcode_summary_tsv",
+            "tmp/unfiltered_barcode_summary.tsv",
+            "--primers_file",
+            str(primers),
+            "--b_with_ids",
+            "tmp/b_with_ids.txt",
+            "--canonical_dir",
+            ".",
+        ],
+        output_dir,
+    )
 
     # 2026-09-09: Generate Phase 2A comparison reports only from canonical v3 files.
     # Reason: canonical-derived reports must be reconciled before replacing legacy report writers.
