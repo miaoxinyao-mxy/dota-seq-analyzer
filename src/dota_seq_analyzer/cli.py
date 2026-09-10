@@ -63,6 +63,10 @@ def main() -> None:
     parser.add_argument("-p", "--primers", required=True, help="DoTA-Seq primer CSV file")
     parser.add_argument("-o", "--output", required=True, help="Output directory")
     parser.add_argument("-@", "--threads", dest="analysis_workers", type=int, default=1, metavar="INT", help="Number of parallel workers/threads used by DoTA-seq analysis")
+    parser.add_argument(
+        "--keep-tmp", action="store_true",
+        help="Preserve computational intermediate files after a successful run",
+    )
     parser.add_argument("--taxonomy-db", help="Extracted Kraken2 taxonomy database directory")
     # 2026-08-28: Expose the Stage 2 threshold in the public CLI.
     # Reason: users can control low-count taxon filtering without a separate skip flag.
@@ -198,7 +202,6 @@ def main() -> None:
     for directory in (
         output_dir,
         output_dir / "tmp",
-        output_dir / "reports",
         output_dir / "figures",
     ):
         directory.mkdir(parents=True, exist_ok=True)
@@ -411,7 +414,7 @@ def main() -> None:
             "--primers_file",
             str(primers),
             "--filtered_sub_arg_barcode_summary_tsv",
-            "reports/cell_target_matrix.tsv",
+            "tmp/cell_target_matrix.tsv",
             "--alpha", str(config.TARGET_SEQUENCE_ALPHA),
             "--max_shift_sub_arg", str(config.TARGET_SEQUENCE_MAX_SHIFT),
             "--max_mm_sub_arg", str(config.TARGET_SEQUENCE_MAX_MISMATCHES),
@@ -430,7 +433,7 @@ def main() -> None:
     else:
         shutil.copyfile(
             output_dir / "tmp/filtered_counts_summary_arg.tsv",
-            output_dir / "reports/cell_target_matrix.tsv",
+            output_dir / "tmp/cell_target_matrix.tsv",
         )
 
     if pv_requested:
@@ -440,9 +443,11 @@ def main() -> None:
             "--sequence_list",
             "tmp/sub_arg_seqs_list.txt",
             "--cell_matrix",
-            "reports/cell_target_matrix.tsv",
+            "tmp/cell_target_matrix.tsv",
             "--primers_file",
             str(primers),
+            "--output_tsv",
+            "tmp/cell_phase_variation.tsv",
         ]
         _run_step(
             "Analyze phase variation",
@@ -461,11 +466,11 @@ def main() -> None:
                 "--input_fasta",
                 str(reference),
                 "--blastn_sub_arg_tsv",
-                "reports/reference_matches.tsv",
+                "tmp/reference_matches.tsv",
                 "--db",
                 "tmp/blast_db/dota_seq_analyzer",
                 "--final_barcode_summary_tsv",
-                "reports/cell_target_matrix.tsv",
+                "tmp/cell_target_matrix.tsv",
                 "--first_gene_column_num",
                 "14",
             ],
@@ -475,7 +480,7 @@ def main() -> None:
         python,
         script("export_results.py"),
         "--input_tsv",
-        "reports/cell_target_matrix.tsv",
+        "tmp/cell_target_matrix.tsv",
         "--primers_file",
         str(primers),
         "--output_jsonl",
@@ -483,7 +488,7 @@ def main() -> None:
     ]
     if pv_requested:
         export_command.extend([
-            "--phase_variation_tsv", "reports/cell_phase_variation.tsv"
+            "--phase_variation_tsv", "tmp/cell_phase_variation.tsv"
         ])
     _run_step("Export JSONL", export_command, output_dir)
 
@@ -492,7 +497,7 @@ def main() -> None:
         "--runtime-config", "tmp/runtime_config.json",
         "--raw-cell-table", "tmp/asv_barcode_summary.tsv",
         "--filtered-counts", "tmp/filtered_counts_summary_arg.tsv",
-        "--final-cell-table", "reports/cell_target_matrix.tsv",
+        "--final-cell-table", "tmp/cell_target_matrix.tsv",
         "--global-asv", "tmp/global_asv.tsv",
         "--read-qc-stats", "tmp/read_qc_stats.json",
         "--barcode-cluster-stats", "tmp/barcode_cluster_stats.json",
@@ -513,13 +518,26 @@ def main() -> None:
         ])
     if pv_requested:
         canonical_command.extend([
-            "--phase-variation", "reports/cell_phase_variation.tsv",
+            "--phase-variation", "tmp/cell_phase_variation.tsv",
         ])
     if reference is not None:
         canonical_command.extend([
-            "--reference-matches", "reports/reference_matches.tsv",
+            "--reference-matches", "tmp/reference_matches.tsv",
         ])
     _run_step("Build and validate canonical results", canonical_command, output_dir)
+
+    # 2026-09-10: Promote canonical-derived reports after canonical validation.
+    # Reason: reports/ contains user-facing views, while pre-canonical working TSVs stay in tmp/.
+    _run_step(
+        "Generate canonical-derived reports",
+        [
+            python,
+            script("canonical_reports.py"),
+            "--canonical-dir", ".",
+            "--output-dir", "reports",
+        ],
+        output_dir,
+    )
 
     # 2026-09-09: Generate final-result figures after canonical validation.
     # Reason: the ASV-target and primer-balance figures now read canonical v3 directly.
@@ -542,18 +560,10 @@ def main() -> None:
         output_dir,
     )
 
-    # 2026-09-09: Generate Phase 2A comparison reports only from canonical v3 files.
-    # Reason: canonical-derived reports must be reconciled before replacing legacy report writers.
-    _run_step(
-        "Generate canonical-derived comparison reports",
-        [
-            python,
-            script("canonical_reports.py"),
-            "--canonical-dir", ".",
-            "--output-dir", ".phase2a_reports",
-        ],
-        output_dir,
-    )
+    # 2026-09-10: Remove intermediates only after every final artifact succeeds.
+    # Reason: failed runs retain their incomplete staging directory for debugging.
+    if not args.keep_tmp:
+        shutil.rmtree(output_dir / "tmp")
 
     os.replace(output_dir, requested_output_dir)
     print(f"\nDoTA-Seq Analyzer complete: {requested_output_dir}", flush=True)

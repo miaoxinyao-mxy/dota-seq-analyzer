@@ -32,12 +32,9 @@ def make_figures(
         
     use_asvs = determine_use_asvs(use_asvs_str) # convert use_asvs from yes/no into a bool True/False value
 
-    # 2026-09-10: Preserve the taxonomy-count intermediate from the active data source.
-    # Reason: canonical production figures must not require a legacy report TSV.
-    if canonical_dir is not None:
-        write_global_tax_classification_from_canonical(
-            canonical_dir, global_mle_tax_tsv)
-    else:
+    # 2026-09-10: Retain the taxonomy-count file only for the legacy figure path.
+    # Reason: canonical production figures do not consume this redundant intermediate.
+    if canonical_dir is None:
         write_global_tax_classification_file(
             final_asv_barcode_summary_tsv, global_mle_tax_tsv)
 

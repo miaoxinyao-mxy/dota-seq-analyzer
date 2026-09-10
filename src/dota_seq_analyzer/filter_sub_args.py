@@ -102,6 +102,10 @@ def run_sub_arg_denoising_pipeline(filepath, alpha, output_file):
     final_df['Family'] = final_df['Sub-ARG_final'].apply(lambda x: str(x).rsplit("_seq_", 1)[0])
     final_df = final_df.sort_values(by=['Family', 'Cell_count'], ascending=[True, False])
 
-    final_df[['Sub-ARG_final', 'Cell_count']].to_csv(output_file, sep='\t', index=False)
+    # 2026-09-10: Write legacy denoising statistics only when explicitly requested.
+    # Reason: production uses the returned retained-name list and has no later file consumer.
+    if output_file is not None:
+        final_df[['Sub-ARG_final', 'Cell_count']].to_csv(
+            output_file, sep='\t', index=False)
 
     return final_df['Sub-ARG_final'].to_list()

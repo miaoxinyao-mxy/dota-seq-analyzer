@@ -72,7 +72,7 @@ These files share one `run_id` and are schema- and relationship-validated before
 
 `dota_seq_analyzer_results.jsonl` is retained as a legacy compatibility export. Files under `reports/`, including `cell_target_matrix.tsv`, are derived human-readable tables rather than the canonical source of truth. Phase-variation calls are written to `reports/cell_phase_variation.tsv`, and optional BLAST matches to `reports/reference_matches.tsv`.
 
-Intermediate files are written to `tmp/`, report tables to `reports/`, and figures to `figures/`.
+Human-readable derived tables are written to `reports/`, and plots are written to `figures/`. Computational intermediates are removed after a successful run by default. Use `--keep-tmp` to preserve the complete `tmp/` directory for development or debugging; failed runs retain their incomplete staging directory and intermediates.
 
 ## Optional: PrimerPicker
 

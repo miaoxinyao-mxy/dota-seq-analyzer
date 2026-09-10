@@ -115,7 +115,10 @@ def filter_args(
 
     # write to output files
     df_filtered_counts.to_csv(filtered_counts_summary_tsv, sep = "\t", index_label = "Barcode")
-    df_filtered_binary.to_csv(filtered_binary_summary_tsv, sep = "\t", index_label = "Barcode")
+    # 2026-09-10: Write the legacy binary table only when explicitly requested.
+    # Reason: the production pipeline has no consumer for this redundant intermediate.
+    if filtered_binary_summary_tsv is not None:
+        df_filtered_binary.to_csv(filtered_binary_summary_tsv, sep = "\t", index_label = "Barcode")
     df_stats.to_csv(stats_filtering_summary_tsv, sep = "\t", index_label = "ARG")
 
 
@@ -128,7 +131,7 @@ def main():
     # 2026-08-10: Route ARG-filtering tables to tmp by default.
     # Reason: they are intermediate inputs to subtyping and JSONL export.
     parser.add_argument("--filtered_counts_summary_arg_tsv", type=str, default="tmp/filtered_counts_summary_arg.tsv")
-    parser.add_argument("--filtered_binary_summary_arg_tsv", type=str, default="tmp/filtered_binary_summary_arg.tsv")
+    parser.add_argument("--filtered_binary_summary_arg_tsv", type=str)
     parser.add_argument("--stats_filtering_summary_arg_tsv", type=str, default="tmp/stats_filtering_summary_arg.tsv")
     parser.add_argument("--alpha", type=float, default=TARGET_BACKGROUND_ALPHA)
 
@@ -136,9 +139,14 @@ def main():
 
     # 2026-08-10: Materialize the temporary output directory before writing ARG tables.
     # Reason: the default tmp paths must work in a new result directory.
-    ensure_output_directories(
-        args.filtered_counts_summary_arg_tsv, args.filtered_binary_summary_arg_tsv,
-        args.stats_filtering_summary_arg_tsv)
+    ensure_output_directories(*[
+        path for path in (
+            args.filtered_counts_summary_arg_tsv,
+            args.filtered_binary_summary_arg_tsv,
+            args.stats_filtering_summary_arg_tsv,
+        )
+        if path is not None
+    ])
     
     # make sure input file paths exist
     if not os.path.exists(args.input_arg_barcode_summary_tsv):
