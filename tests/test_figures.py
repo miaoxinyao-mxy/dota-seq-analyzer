@@ -46,6 +46,15 @@ class PrimerBalanceFigureTests(unittest.TestCase):
         self.assertTrue(output.is_file())
         self.assertGreater(output.stat().st_size, 0)
 
+    def test_single_target_writes_figure(self):
+        output = self.root / "single_target_primer_balance.png"
+
+        figures_program._render_primer_balance_figure(
+            str(output), {"target_1": [0.25, 0.5, 0.75]}, 72)
+
+        self.assertTrue(output.is_file())
+        self.assertGreater(output.stat().st_size, 0)
+
     def test_degenerate_barcode_group_sizes_do_not_emit_plot_warnings(self):
         import matplotlib.pyplot as plt
 

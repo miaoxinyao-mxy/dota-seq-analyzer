@@ -59,6 +59,30 @@ An optional AMR reference is included in `database/amr-reference-db.tar.gz`.
 
 Run `dota-seq-analyzer --help` for database overrides, parallel analysis, and filtering options. By default, taxa must be represented by at least 10 cells. Use `--min-cells-per-taxon 5` to retain taxa with at least five cells, `--min-cells-per-taxon 1` to retain every taxon represented after Stage 1, or `--min-cells-per-taxon 0` to disable Stage 2 taxonomy count filtering.
 
+## Reproducible example
+
+The repository includes a deterministic synthetic example with 12 cell barcodes,
+one 16S sequence, and one synthetic target. It uses the bundled GreenGenes2-based
+taxonomy database extracted during installation; it does not contain internal
+test01/test02 data.
+
+```bash
+conda run -n dota-seq-analyzer dota-seq-analyzer \
+  -1 examples/minimal/synthetic_R1.fastq \
+  -2 examples/minimal/synthetic_R2.fastq \
+  -p examples/minimal/primers.csv \
+  -o example_output \
+  -@ 2
+```
+
+The expected `example_output/run_summary.json` counts are:
+
+- 128 raw and QC-passed read pairs;
+- 96 accepted 16S reads, 32 target reads, and 0 unclassified reads;
+- 12 raw, clustered, and final cell barcodes;
+- 1 final ASV;
+- 4 final `synthetic_target`-positive cells.
+
 ## Output
 
 The authoritative v3.0.0 results are:

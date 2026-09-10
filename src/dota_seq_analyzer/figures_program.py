@@ -344,6 +344,9 @@ def _render_primer_balance_figure(
     # plot the graphs
     fig, axs = plt.subplots(len(target_ratios), 1, figsize = (10, len(target_ratios)))
     fig.tight_layout()
+    # 2026-09-10: Normalize a single subplot to the same iterable shape as multiple targets.
+    # Reason: Matplotlib returns one Axes object, rather than an array, for one target.
+    axs = np.atleast_1d(axs)
     i = 0
     for target in target_ratios:
         ax = axs[i]
