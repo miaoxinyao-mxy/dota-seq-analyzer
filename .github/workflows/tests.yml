@@ -1,0 +1,27 @@
+name: Unit tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-activate-base: false
+          miniforge-version: latest
+
+      - name: Create project environment
+        run: conda env create -f environment.yml
+
+      - name: Install package
+        run: conda run -n dota-seq-analyzer python -m pip install -e .
+
+      - name: Run unit tests
+        run: conda run -n dota-seq-analyzer python -m unittest discover -s tests -v
