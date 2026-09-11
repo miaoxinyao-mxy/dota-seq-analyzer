@@ -1,5 +1,6 @@
 import random
 import sys
+import tempfile
 import unittest
 from collections import Counter
 from pathlib import Path
@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src" / "dota_seq_analyzer"))
 from match_barcodes_to_IDs_revised import (  # noqa: E402
     check_barcodes_match_revised,
     create_clustered_b_with_ids,
+    extract_b_with_ids_single,
 )
 
 
@@ -38,6 +40,27 @@ def make_inputs(barcodes, counts=None):
 
 
 class BarcodeClusteringRegressionTests(unittest.TestCase):
+    def test_fastq_ids_with_and_without_descriptions(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            fastq = Path(tempdir) / "reads_R2.fastq"
+            barcode_with_description = "ACGTACGTACGTACGTACGT"
+            barcode_without_description = "TGCATGCATGCATGCATGCA"
+            fastq.write_text(
+                "@with_description 2:N:0:SYNTHETIC\n"
+                f"{barcode_with_description}AAAA\n+\n{'I' * 24}\n"
+                "@without_description\n"
+                f"{barcode_without_description}AAAA\n+\n{'I' * 24}\n",
+                encoding="ascii",
+            )
+            counts = Counter()
+            ids = {}
+
+            extract_b_with_ids_single(
+                str(fastq), "16s", {"16s": 0}, counts, ids, 20)
+
+            self.assertEqual(["with_description"], ids[barcode_with_description][0])
+            self.assertEqual(["without_description"], ids[barcode_without_description][0])
+
     def assert_same_result(self, barcodes, counts, max_shift):
         old_counts, old_ids = make_inputs(barcodes, counts)
         new_counts, new_ids = make_inputs(barcodes, counts)

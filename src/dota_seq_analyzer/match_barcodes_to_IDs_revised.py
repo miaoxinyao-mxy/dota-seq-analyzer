@@ -51,7 +51,9 @@ def extract_b_with_ids_single(
         line = f.readline()
         while line != "":
             # parse fastq text
-            id = line.split(" ")[0].strip("@")
+            # 2026-09-11: Remove the FASTQ line ending before extracting the ID token.
+            # Reason: valid headers without a description otherwise retain "\n" in the ID.
+            id = line.strip().split(" ")[0].strip("@")
             bc = f.readline().strip("\n")[0:barcode_len]
 
             # increment bcs_with_counts
