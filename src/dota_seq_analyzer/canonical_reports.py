@@ -128,11 +128,14 @@ def _taxonomy_summary(cells: list[dict]) -> pd.DataFrame:
 
 
 def _target_summary(run_summary: dict) -> pd.DataFrame:
+    # 2026-09-21: Report target retention against the final ASV-filtered cells.
+    # Reason: derived reports must describe the same final set as cells.jsonl.
     rows = [{
         "ARG": item["target_name"],
         "Original": item["original_positive_cells"],
-        "Filtered Out": item["filtered_out_cells"],
-        "Remaining": item["remaining_positive_cells"],
+        "Filtered Out":
+            item["original_positive_cells"] - item["final_positive_cells"],
+        "Remaining": item["final_positive_cells"],
         "% Retention": item["retention_percent"],
     } for item in run_summary["target_filtering_summary"]]
     return pd.DataFrame(
@@ -207,7 +210,7 @@ def _run_overview(run_summary: dict) -> pd.DataFrame:
                  run_summary["asv_summary"]["final_asv_count"]))
     rows.extend(
         ("targets", f'{item["target_name"]}.positive_cells',
-         item["remaining_positive_cells"])
+         item["final_positive_cells"])
         for item in run_summary["target_filtering_summary"])
     if "phase_variation_summary" in run_summary:
         phase = run_summary["phase_variation_summary"]

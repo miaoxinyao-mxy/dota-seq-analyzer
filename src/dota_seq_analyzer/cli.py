@@ -182,6 +182,8 @@ def main() -> None:
                 "filter_corrupted_single_asv": False,
                 "taxonomy_conflict_minimum_cells": config.ASV_TAXONOMY_CONFLICT_MIN_CELLS,
                 "taxonomy_conflict_dominant_phylum_fraction": config.ASV_TAXONOMY_CONFLICT_DOMINANCE,
+                "final_minimum_cell_fraction": config.ASV_FINAL_MIN_CELL_FRACTION,
+                "final_minimum_cell_count": config.ASV_FINAL_MIN_CELL_COUNT,
             },
             "target_background_filtering": {"alpha": config.TARGET_BACKGROUND_ALPHA},
             "target_sequence_reconstruction": {
@@ -383,6 +385,8 @@ def main() -> None:
             "tmp/16s_r1_primer_starts.tsv",
             "--primers_file",
             str(primers),
+            "--candidate_asv_barcode_summary_tsv",
+            "tmp/candidate_asv_barcode_summary.tsv",
             "--filter_corrupted", "false",
             "--stats_json", "tmp/asv_stats.json",
         ],
@@ -501,6 +505,7 @@ def main() -> None:
     canonical_command = [
         python, script("canonical_results.py"),
         "--runtime-config", "tmp/runtime_config.json",
+        "--candidate-cell-table", "tmp/candidate_asv_barcode_summary.tsv",
         "--raw-cell-table", "tmp/asv_barcode_summary.tsv",
         "--filtered-counts", "tmp/filtered_counts_summary_arg.tsv",
         "--final-cell-table", "tmp/cell_target_matrix.tsv",

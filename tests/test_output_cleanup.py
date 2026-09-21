@@ -57,6 +57,8 @@ class OutputCleanupCLITests(unittest.TestCase):
             if name == fail_at:
                 raise subprocess.CalledProcessError(1, command)
             if name == "Build and validate canonical results":
+                (staging / "all_cells.jsonl").write_text("", encoding="utf-8")
+                (staging / "all_asvs.jsonl").write_text("", encoding="utf-8")
                 (staging / "cells.jsonl").write_text("", encoding="utf-8")
                 (staging / "asvs.jsonl").write_text("", encoding="utf-8")
                 (staging / "target_sequences.jsonl").write_text("", encoding="utf-8")

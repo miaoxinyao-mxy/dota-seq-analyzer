@@ -261,8 +261,10 @@ def summarize_barcode(core_counter):
 def conduct_asv_typing(
     barcode_summary_tsv_filename: str, b_with_ids_filename: str,
     fwd_16s_fastq: str, rev_16s_fastq: str, r1_16s_manifest: str,
-    asv_barcode_summary_tsv_filename: str, global_asv_tsv_filename: str,
-    primers_file: str, filter_corrupted: bool = False
+    asv_barcode_summary_tsv_filename: str,
+    candidate_asv_barcode_summary_tsv_filename: str,
+    global_asv_tsv_filename: str, primers_file: str,
+    filter_corrupted: bool = False
     ):
     """Run the full ASV typing algorithm"""
 
@@ -310,8 +312,9 @@ def conduct_asv_typing(
     filtered_df = write_ASV_barcode_summary(
         barcode_summary_tsv_filename, final_barcodes, \
         barcode_summary, seq_to_asv, \
-        asv_barcode_summary_tsv_filename, primers_file, filter_corrupted,
-        filter_stats)
+        asv_barcode_summary_tsv_filename,
+        candidate_asv_barcode_summary_tsv_filename,
+        primers_file, filter_corrupted, filter_stats)
 
     # 2026-09-08: Recalculate global ASV cell counts after all cell filters.
     # Reason: global_asv.tsv must agree with the surviving ASV barcode summary.
@@ -329,6 +332,7 @@ def conduct_asv_typing(
 def filter_asv_taxonomy_conflicts(
     df_combined, min_cells: int = ASV_TAXONOMY_CONFLICT_MIN_CELLS,
     dominance: float = ASV_TAXONOMY_CONFLICT_DOMINANCE,
+    exclusion_reasons: Dict[str, tuple[str, str]] = None,
 ):
     """Remove cells conflicting with a strongly dominant phylum within an ASV."""
     # 2026-09-08: Compare ASV assignments with explicit phylum fields.
@@ -371,7 +375,12 @@ def filter_asv_taxonomy_conflicts(
         & phylum.notna()
         & (phylum != dominant_for_cell)
     )
+    conflict_barcodes = df_combined.index[conflict].to_list()
     removed_counts = df_combined.loc[conflict, "Assigned_core_asv"].value_counts().to_dict()
+    if exclusion_reasons is not None:
+        for barcode in conflict_barcodes:
+            exclusion_reasons[str(barcode)] = (
+                "asv_taxonomy_conflict", "ASV_taxonomy_conflict")
     if removed_counts:
         df_combined.loc[conflict, "Status"] = "ASV_taxonomy_conflict"
         df_combined.drop(index=df_combined.index[conflict], inplace=True)
@@ -383,7 +392,10 @@ def filter_asv_taxonomy_conflicts(
     return removed_counts
 
 
-def filter_ASV(df_combined, filter_corrupted: bool = False):
+def filter_ASV(
+    df_combined, filter_corrupted: bool = False,
+    exclusion_reasons: Dict[str, tuple[str, str]] = None,
+):
     """Filter out cells classified as having mixed ASVs, and optionally low-confidence single ASVs"""
     
     original_num_barcodes = len(df_combined)
@@ -398,12 +410,14 @@ def filter_ASV(df_combined, filter_corrupted: bool = False):
     statuses_to_remove = {"mixed_ASV", "low_depth"}
     if filter_corrupted:
         statuses_to_remove.add("corrupted_single_ASV")
-    df_combined.drop(
-        index=df_combined.index[df_combined["Status"].isin(statuses_to_remove)],
-        inplace=True,
-    )
+    status_mask = df_combined["Status"].isin(statuses_to_remove)
+    if exclusion_reasons is not None:
+        for barcode, status in df_combined.loc[status_mask, "Status"].items():
+            exclusion_reasons[str(barcode)] = ("asv_status_quality", str(status))
+    df_combined.drop(index=df_combined.index[status_mask], inplace=True)
     after_status_filter = len(df_combined)
-    conflict_counts = filter_asv_taxonomy_conflicts(df_combined)
+    conflict_counts = filter_asv_taxonomy_conflicts(
+        df_combined, exclusion_reasons=exclusion_reasons)
 
     print("Pre-filtering # of barcodes:", original_num_barcodes)
     print("  # of barcodes filtered out:", original_num_barcodes-len(df_combined))
@@ -418,7 +432,8 @@ def filter_ASV(df_combined, filter_corrupted: bool = False):
 
 def write_ASV_barcode_summary(filtered_barcode_summary_tsv_filename: str, \
     final_barcodes: List[str], barcode_summary: Dict, seq_to_asv: Dict, \
-    asv_barcode_summary_tsv_filename: str, primers_file: str,
+    asv_barcode_summary_tsv_filename: str,
+    candidate_asv_barcode_summary_tsv_filename: str, primers_file: str,
     filter_corrupted: bool = False, filter_stats: Dict = None):
     """
     Write revised barcode summary - specifically, add new columns for per-cell ASV information, 
@@ -454,9 +469,23 @@ def write_ASV_barcode_summary(filtered_barcode_summary_tsv_filename: str, \
         df_original_args.drop(col, axis = 1, inplace = True)
 
     df_combined = pd.concat([df_original_mle_info, df_asv, df_original_args], axis=1)
-    observed_filter_stats = filter_ASV(df_combined, filter_corrupted) # filter out cells with mixed and optionally low-confidence single ASVs
+    candidate_df = df_combined.copy()
+    exclusion_reasons = {}
+    observed_filter_stats = filter_ASV(
+        df_combined, filter_corrupted, exclusion_reasons)
     if filter_stats is not None:
         filter_stats.update(observed_filter_stats)
+
+    # 2026-09-21: Preserve every cell entering ASV typing with its next-stage decision.
+    # Reason: final abundance filtering must not erase earlier ASV QC provenance.
+    candidate_df["Final_filter_stage"] = "asv_abundance"
+    candidate_df["Final_filter_reason"] = ""
+    for barcode, (stage, reason) in exclusion_reasons.items():
+        candidate_df.loc[barcode, "Final_filter_stage"] = stage
+        candidate_df.loc[barcode, "Final_filter_reason"] = reason
+    candidate_df.to_csv(
+        candidate_asv_barcode_summary_tsv_filename,
+        sep="\t", index_label="Barcode")
 
     df_combined.to_csv(asv_barcode_summary_tsv_filename, sep = "\t", index_label = "Barcode")
     return df_combined
@@ -487,6 +516,9 @@ def main():
     # 2026-08-10: Route sequence-variant tables to tmp by default.
     # Reason: these tables support taxonomic assignment but are not the primary result.
     parser.add_argument("--asv_barcode_summary_tsv", type=str, default = "tmp/asv_barcode_summary.tsv")
+    parser.add_argument(
+        "--candidate_asv_barcode_summary_tsv", type=str,
+        default="tmp/candidate_asv_barcode_summary.tsv")
     parser.add_argument("--global_asv_tsv", type=str, default = "tmp/global_asv.tsv")
     # 2026-08-10: Use parse_bool for predictable CLI behavior.
     # Reason: argparse type=bool treats every non-empty string as True.
@@ -498,7 +530,10 @@ def main():
 
     # 2026-08-10: Materialize the temporary output directory before writing ASV tables.
     # Reason: the default tmp paths must work in a new result directory.
-    ensure_output_directories(args.asv_barcode_summary_tsv, args.global_asv_tsv)
+    ensure_output_directories(
+        args.asv_barcode_summary_tsv,
+        args.candidate_asv_barcode_summary_tsv,
+        args.global_asv_tsv)
     
     # make sure input file paths exist
     if not os.path.exists(args.barcode_summary_tsv):
@@ -523,8 +558,9 @@ def main():
     stats = conduct_asv_typing(
         args.barcode_summary_tsv, args.b_with_ids,
         args.r1_16s_fastq, args.r2_16s_fastq, args.r1_16s_manifest,
-        args.asv_barcode_summary_tsv, args.global_asv_tsv,
-        args.primers_file, args.filter_corrupted
+        args.asv_barcode_summary_tsv,
+        args.candidate_asv_barcode_summary_tsv,
+        args.global_asv_tsv, args.primers_file, args.filter_corrupted
     )
     if args.stats_json:
         ensure_output_directories(args.stats_json)

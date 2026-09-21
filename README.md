@@ -87,14 +87,16 @@ The expected `example_output/run_summary.json` counts are:
 
 ## Output
 
-The authoritative v3.0.0 results are:
+The authoritative v3.1.0 results are:
 
-- `cells.jsonl`: one canonical record per surviving cell, including taxonomy, ASV assignment, QC fields, and target calls.
-- `asvs.jsonl`: canonical ASV identifiers, core sequences, and final surviving-cell counts.
+- `all_cells.jsonl`: complete candidate-cell records after original cell/taxonomy filtering, including later final-filter stage and reason.
+- `all_asvs.jsonl`: candidate ASVs before final abundance filtering, including candidate cell counts, fractions, and final status.
+- `cells.jsonl`: final cells whose ASVs pass both the 0.5% cell-fraction and 10-cell minimum.
+- `asvs.jsonl`: final ASVs, core sequences, and final surviving-cell counts.
 - `run_summary.json`: run identity, inputs, parameters, read/cell filtering counts, and result totals.
-- `target_sequences.jsonl`: canonical reconstructed target-sequence clusters when sequence reconstruction is performed; otherwise this file is not generated.
+- `target_sequences.jsonl`: canonical reconstructed target-sequence clusters referenced by final cells when sequence reconstruction is performed; otherwise this file is not generated.
 
-These files share one `run_id` and are schema- and relationship-validated before the completed output directory is published. The schema contract is documented in [`docs/canonical-schema-v3.0.0.md`](docs/canonical-schema-v3.0.0.md).
+These files share one `run_id` and are schema- and relationship-validated before the completed output directory is published. The schema contract is documented in [`docs/canonical-schema-v3.1.0.md`](docs/canonical-schema-v3.1.0.md). The previous frozen v3.0.0 contract remains available for historical results.
 
 `dota_seq_analyzer_results.jsonl` is retained as a legacy compatibility export. Files under `reports/`, including `cell_target_matrix.tsv`, are derived human-readable tables rather than the canonical source of truth. Phase-variation calls are written to `reports/cell_phase_variation.tsv`, and optional BLAST matches to `reports/reference_matches.tsv`.
 
@@ -111,7 +113,7 @@ The main output is `primer_picker_results/top-primer-sets.tsv`.
 ## Citation
 
 Software releases and canonical result schemas are versioned independently:
-DoTA-Seq Analyzer `v0.1.0` writes canonical schema `v3.0.0`. Cite the
+DoTA-Seq Analyzer development builds on this branch write canonical schema `v3.1.0`; software and schema versions are independent. Cite the
 versioned software release using the metadata in [CITATION.cff](CITATION.cff).
 
 DoTA-Seq Analyzer was developed for analysis of single-cell targeted sequencing data based on the DoTA-Seq framework. For the underlying DoTA-Seq method, please cite:

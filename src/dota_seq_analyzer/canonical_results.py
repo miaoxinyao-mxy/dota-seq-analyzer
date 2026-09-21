@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Build and validate the version 3.0.0 canonical result set."""
+"""Build and validate the version 3.1.0 canonical result set."""
 
 import argparse
 from collections import Counter, defaultdict
+from copy import deepcopy
 import json
 import math
 import os
@@ -11,7 +12,12 @@ from typing import Any
 
 import pandas as pd
 
-SCHEMA_VERSION = "3.0.0"
+from algorithm_config import (
+    ASV_FINAL_MIN_CELL_COUNT,
+    ASV_FINAL_MIN_CELL_FRACTION,
+)
+
+SCHEMA_VERSION = "3.1.0"
 TAXONOMY_RANKS = {
     "R1": "domain", "P": "phylum", "C": "class", "O": "order",
     "F": "family", "G": "genus", "S": "species",
@@ -278,6 +284,154 @@ def build_cells(
     return cells
 
 
+def apply_final_asv_filter(
+    cells: list[dict],
+    minimum_cell_fraction: float = ASV_FINAL_MIN_CELL_FRACTION,
+    minimum_cell_count: int = ASV_FINAL_MIN_CELL_COUNT,
+) -> tuple[list[dict], set[str], Counter]:
+    """Return final cells after deterministic ASV abundance filtering."""
+    if not 0 <= minimum_cell_fraction <= 1:
+        raise ValueError("ASV minimum cell fraction must be between 0 and 1")
+    if minimum_cell_count < 0:
+        raise ValueError("ASV minimum cell count cannot be negative")
+    counts = Counter(cell["asv"]["asv_id"] for cell in cells)
+    denominator = len(cells)
+    passing_asvs = {
+        asv_id for asv_id, count in counts.items()
+        if count >= minimum_cell_count
+        and denominator > 0
+        and count / denominator >= minimum_cell_fraction
+    }
+    final_cells = [
+        cell for cell in cells if cell["asv"]["asv_id"] in passing_asvs
+    ]
+    return final_cells, passing_asvs, counts
+
+
+def build_all_cells(
+    run_id: str, candidate_table_path: str, eligible_cells: list[dict],
+    passing_asvs: set[str], target_names: list[str],
+) -> list[dict]:
+    """Build candidate-cell provenance records from the pre-ASV-filter table."""
+    candidates = pd.read_csv(candidate_table_path, sep="\t", index_col="Barcode")
+    if not candidates.index.is_unique:
+        raise ValueError("Candidate-cell table contains duplicate barcodes")
+    eligible_by_barcode = {
+        cell["cell_barcode"]: cell for cell in eligible_cells
+    }
+    missing = set(eligible_by_barcode) - set(candidates.index.astype(str))
+    if missing:
+        raise ValueError(
+            "Eligible cells are missing from candidate-cell table: "
+            + ", ".join(sorted(missing)[:5]))
+    records = []
+    for barcode_value, row in candidates.iterrows():
+        barcode = str(barcode_value)
+        eligible = eligible_by_barcode.get(barcode)
+        if eligible is not None:
+            record = deepcopy(eligible)
+            record["record_type"] = "candidate_cell"
+            asv_id = eligible["asv"]["asv_id"]
+            passed = asv_id in passing_asvs
+            stage = "final" if passed else "asv_abundance"
+            reason = None if passed else "low_asv_support"
+        else:
+            raw_asv_id = _native(row["Assigned_core_asv"])
+            asv_id = None
+            if raw_asv_id is not None and str(raw_asv_id) not in {
+                "", "NA", "None", "nan",
+            }:
+                asv_id = str(raw_asv_id)
+            targets = []
+            for target in target_names:
+                raw_count = _integer(row[target])
+                if raw_count > 0:
+                    targets.append({
+                        "target_name": target,
+                        "raw_read_count": raw_count,
+                        "filtered_read_count": None,
+                        "assignment_type": "not_evaluated",
+                    })
+            record = {
+                "schema_version": SCHEMA_VERSION,
+                "record_type": "candidate_cell",
+                "run_id": run_id,
+                "cell_barcode": barcode,
+                "taxonomy": {
+                    "ranks": _parse_taxonomy(row["Predicted taxonomy"]),
+                    "confidence": _number_or_none(row["Confidence"]),
+                    "contamination": _number_or_none(row["Contamination"]),
+                },
+                "taxonomy_evidence": {
+                    "total_16s_reads": _integer(row["Total # of 16s reads"]),
+                    "technical_noise_reads": _integer(
+                        row["Technical noise count"]),
+                },
+                "asv": {
+                    "asv_id": asv_id,
+                    "status": str(row["Status"]),
+                    "reads_used": _integer(row["Reads_used_for_ASV"]),
+                    "raw_unique_core_sequences": _integer(
+                        row["Raw unique_core_sequences"]),
+                    "dominant_raw_read_count": _integer(
+                        row["Dominant_raw_read_count"]),
+                    "coexisting_2bp_reads": _integer(
+                        row["Coexisting_2bp_reads"]),
+                    "unauthorized_secondary_reads": _integer(
+                        row["Unauthorized_secondary_reads"]),
+                    "final_cell_asv_reads": _integer(
+                        row["Final_cell_asv_reads"]),
+                    "max_internal_distance": _integer(
+                        row["Max_internal_distance"]),
+                },
+                "targets": targets,
+            }
+            passed = False
+            stage_value = _native(row["Final_filter_stage"])
+            reason_value = _native(row["Final_filter_reason"])
+            stage = str(stage_value) if stage_value is not None else "asv_status_quality"
+            reason = str(reason_value) if reason_value is not None else str(row["Status"])
+        record["final_filter"] = {
+            "passed": passed,
+            "stage": stage,
+            "reason": reason,
+        }
+        records.append(record)
+    return records
+
+
+def build_all_asvs(
+    run_id: str, candidate_counts: Counter, passing_asvs: set[str],
+    global_asv_path: str,
+) -> list[dict]:
+    """Build pre-abundance-filter ASV provenance records."""
+    sequences = _load_asv_sequences(global_asv_path)
+    denominator = sum(candidate_counts.values())
+    records = []
+    for asv_id, sequence in sequences.items():
+        count = candidate_counts.get(asv_id, 0)
+        if count <= 0:
+            continue
+        passed = asv_id in passing_asvs
+        records.append({
+            "schema_version": SCHEMA_VERSION,
+            "record_type": "candidate_asv",
+            "run_id": run_id,
+            "asv_id": asv_id,
+            "core_sequence": sequence,
+            "candidate_cell_count": count,
+            "candidate_cell_fraction": count / denominator,
+            "final_filter": {
+                "passed": passed,
+                "stage": "final" if passed else "asv_abundance",
+                "reason": None if passed else "low_asv_support",
+            },
+        })
+    if set(candidate_counts) != {item["asv_id"] for item in records}:
+        raise ValueError("Candidate ASV sequences do not resolve exactly")
+    return records
+
+
 def build_asvs(run_id: str, cells: list[dict], global_asv_path: str) -> list[dict]:
     sequences = _load_asv_sequences(global_asv_path)
     counts = Counter(cell["asv"]["asv_id"] for cell in cells)
@@ -329,23 +483,41 @@ def build_target_sequences(
     return records
 
 
-def _target_filtering_summary(path: str, target_names: list[str]) -> list[dict]:
+def _target_filtering_summary(
+    path: str, target_names: list[str], final_cells: list[dict],
+) -> list[dict]:
     dataframe = pd.read_csv(path, sep="\t", index_col=0)
+    final_counts = Counter(
+        target["target_name"]
+        for cell in final_cells for target in cell["targets"]
+        if target["filtered_read_count"] > 0
+    )
     records = []
     for target in target_names:
         row = dataframe.loc[target]
+        original = _integer(row["Original"])
+        post_target_filter = _integer(row["Remaining"])
+        final_positive = final_counts[target]
+        if final_positive > post_target_filter:
+            raise ValueError(
+                f"Final positive count exceeds target-filter count for {target}")
         records.append({
             "target_name": target,
-            "original_positive_cells": _integer(row["Original"]),
+            "original_positive_cells": original,
             "filtered_out_cells": _integer(row["Filtered Out"]),
-            "remaining_positive_cells": _integer(row["Remaining"]),
-            "retention_percent": float(row["% Retention"]),
+            "remaining_positive_cells": post_target_filter,
+            "asv_abundance_excluded_positive_cells":
+                post_target_filter - final_positive,
+            "final_positive_cells": final_positive,
+            "retention_percent": (
+                final_positive / original * 100 if original else 0.0),
         })
     return records
 
 
 def build_run_summary(
     run_id: str, runtime_config: dict, cells: list[dict], asvs: list[dict],
+    eligible_cells: list[dict], all_cells: list[dict], all_asvs: list[dict],
     read_qc_path: str, barcode_cluster_path: str, barcode_filter_path: str,
     asv_stats_path: str, manifest_path: str, packet_paths: tuple[str, str, str],
     target_filter_stats_path: str, phase_variation_path: str | None,
@@ -367,8 +539,13 @@ def build_run_summary(
     if sum(stagger.values()) != classifications["accepted_16s_reads"]:
         raise ValueError("16S stagger counts do not equal accepted 16S packet count")
     final_cells = len(cells)
-    if final_cells != asv_stats["final_cells"]:
-        raise ValueError("Final cell count differs between ASV stage and canonical cells")
+    cells_entering_abundance_filter = len(eligible_cells)
+    if cells_entering_abundance_filter != asv_stats["final_cells"]:
+        raise ValueError(
+            "ASV-stage eligible cell count differs from canonical candidates")
+    if len(all_cells) != asv_stats["before_asv_filter"]:
+        raise ValueError(
+            "Candidate-cell count differs from the pre-ASV-filter stage")
     summary = {
         "schema_version": SCHEMA_VERSION,
         "record_type": "run_summary",
@@ -401,15 +578,25 @@ def build_run_summary(
             "before_asv_filter": asv_stats["before_asv_filter"],
             "after_asv_status_filter": asv_stats["after_asv_status_filter"],
             "asv_taxonomy_conflicts_removed": asv_stats["asv_taxonomy_conflicts_removed"],
+            "before_asv_abundance_filter": cells_entering_abundance_filter,
+            "asv_abundance_filtered_cells":
+                cells_entering_abundance_filter - final_cells,
             "final_cells": final_cells,
         },
-        "asv_summary": {"final_asv_count": len(asvs)},
+        "asv_summary": {
+            "before_abundance_filter_count": len(all_asvs),
+            "filtered_out_asv_count": len(all_asvs) - len(asvs),
+            "final_asv_count": len(asvs),
+        },
         "target_filtering_summary": _target_filtering_summary(
             target_filter_stats_path,
-            [item["target_name"] for item in runtime_config["target_panel"]]),
+            [item["target_name"] for item in runtime_config["target_panel"]],
+            cells),
     }
     if phase_variation_path:
         pv = pd.read_csv(phase_variation_path, sep="\t")
+        final_barcodes = {cell["cell_barcode"] for cell in cells}
+        pv = pv[pv["Barcode"].astype(str).isin(final_barcodes)]
         summary["phase_variation_summary"] = {
             "cell_calls": len(pv),
             "calls": {str(k): int(v) for k, v in pv["Call"].value_counts().items()},
@@ -450,7 +637,7 @@ def _require_nonnegative_fields(record: dict, fields: set[str], label: str):
 
 
 def _validate_run_summary_schema(run_summary: dict) -> set[str]:
-    """Validate the exact v3.0.0 run-summary field contract."""
+    """Validate the exact v3.1.0 run-summary field contract."""
     _require_keys(run_summary["software"], {"name", "version", "git_commit"}, set(), "software")
     _require(isinstance(run_summary["software"]["name"], str), "Invalid software name")
     _require(isinstance(run_summary["software"]["version"], str), "Invalid software version")
@@ -487,7 +674,7 @@ def _validate_run_summary_schema(run_summary: dict) -> set[str]:
         "barcode_clustering": {"barcode_length", "maximum_shift"},
         "cell_taxonomy_filtering": {"minimum_16s_reads", "maximum_contamination", "minimum_cells_per_taxon"},
         "taxonomy_mle": {"p_match", "p_none", "p_error", "alpha_prior", "beta_prior", "minimum_confidence", "minimum_noise_reads", "noise_cutoff_ratio"},
-        "asv": {"r1_start", "r1_end", "r2_start", "r2_end", "maximum_distance", "maximum_shift", "minimum_reads", "mixed_ratio_threshold", "filter_corrupted_single_asv", "taxonomy_conflict_minimum_cells", "taxonomy_conflict_dominant_phylum_fraction"},
+        "asv": {"r1_start", "r1_end", "r2_start", "r2_end", "maximum_distance", "maximum_shift", "minimum_reads", "mixed_ratio_threshold", "filter_corrupted_single_asv", "taxonomy_conflict_minimum_cells", "taxonomy_conflict_dominant_phylum_fraction", "final_minimum_cell_fraction", "final_minimum_cell_count"},
         "target_background_filtering": {"alpha"},
         "target_sequence_reconstruction": {"performed", "maximum_shift", "maximum_mismatches", "alpha", "r1_start", "r1_end", "r2_start", "r2_end", "include_all_targets", "mle"},
     }
@@ -507,6 +694,13 @@ def _validate_run_summary_schema(run_summary: dict) -> set[str]:
         "Invalid 16S primer-start configuration",
     )
     _require(isinstance(parameters["asv"]["filter_corrupted_single_asv"], bool), "Invalid ASV filter setting")
+    _require(
+        isinstance(parameters["asv"]["final_minimum_cell_fraction"], (int, float))
+        and 0 <= parameters["asv"]["final_minimum_cell_fraction"] <= 1,
+        "Invalid final ASV minimum cell fraction")
+    _require(
+        _nonnegative_integer(parameters["asv"]["final_minimum_cell_count"]),
+        "Invalid final ASV minimum cell count")
     reconstruction = parameters["target_sequence_reconstruction"]
     _require(isinstance(reconstruction["performed"], bool), "Invalid reconstruction setting")
     _require(isinstance(reconstruction["include_all_targets"], bool), "Invalid reconstruction target setting")
@@ -529,18 +723,34 @@ def _validate_run_summary_schema(run_summary: dict) -> set[str]:
     _require_keys(run_summary["16s_r1_primer_starts"], expected_starts, set(), "16S primer starts")
     _require_nonnegative_fields(run_summary["16s_r1_primer_starts"], expected_starts, "16S primer starts")
 
-    funnel_fields = {"raw_unique_barcodes", "clustered_barcodes", "after_stage1_taxonomy_filter", "after_minimum_cells_per_taxon", "before_asv_filter", "after_asv_status_filter", "asv_taxonomy_conflicts_removed", "final_cells"}
+    funnel_fields = {"raw_unique_barcodes", "clustered_barcodes", "after_stage1_taxonomy_filter", "after_minimum_cells_per_taxon", "before_asv_filter", "after_asv_status_filter", "asv_taxonomy_conflicts_removed", "before_asv_abundance_filter", "asv_abundance_filtered_cells", "final_cells"}
     _require_keys(run_summary["barcode_funnel"], funnel_fields, set(), "barcode funnel")
     _require_nonnegative_fields(run_summary["barcode_funnel"], funnel_fields, "barcode funnel")
-    _require_keys(run_summary["asv_summary"], {"final_asv_count"}, set(), "ASV summary")
-    _require_nonnegative_fields(run_summary["asv_summary"], {"final_asv_count"}, "ASV summary")
+    asv_summary_fields = {
+        "before_abundance_filter_count", "filtered_out_asv_count",
+        "final_asv_count",
+    }
+    _require_keys(run_summary["asv_summary"], asv_summary_fields, set(), "ASV summary")
+    _require_nonnegative_fields(
+        run_summary["asv_summary"], asv_summary_fields, "ASV summary")
 
-    target_filter_fields = {"target_name", "original_positive_cells", "filtered_out_cells", "remaining_positive_cells", "retention_percent"}
+    target_filter_fields = {"target_name", "original_positive_cells", "filtered_out_cells", "remaining_positive_cells", "asv_abundance_excluded_positive_cells", "final_positive_cells", "retention_percent"}
     observed_targets = []
     for target in run_summary["target_filtering_summary"]:
         _require_keys(target, target_filter_fields, set(), "target-filtering summary")
         observed_targets.append(target["target_name"])
-        _require_nonnegative_fields(target, {"original_positive_cells", "filtered_out_cells", "remaining_positive_cells"}, f"target-filtering summary for {target['target_name']}")
+        _require_nonnegative_fields(
+            target,
+            {"original_positive_cells", "filtered_out_cells",
+             "remaining_positive_cells",
+             "asv_abundance_excluded_positive_cells",
+             "final_positive_cells"},
+            f"target-filtering summary for {target['target_name']}")
+        _require(
+            target["remaining_positive_cells"]
+            == target["asv_abundance_excluded_positive_cells"]
+            + target["final_positive_cells"],
+            f"Final target counts do not balance for {target['target_name']}")
         _require(_number_or_null(target["retention_percent"]), "Invalid target retention percent")
     _require(observed_targets == target_names, "Target-filtering summary does not match target-panel order")
 
@@ -715,6 +925,144 @@ def validate_canonical(
         sum(run_summary["16s_r1_primer_starts"].values()) == classification["accepted_16s_reads"],
         "16S stagger and accepted-read counts differ")
 
+def validate_provenance(
+    run_id: str, all_cells: list[dict], all_asvs: list[dict],
+    cells: list[dict], asvs: list[dict], run_summary: dict,
+):
+    """Validate candidate provenance and its exact relationship to final results."""
+    candidate_barcodes = set()
+    abundance_barcodes = set()
+    passed_barcodes = set()
+    candidate_asv_references = Counter()
+    required_cell_fields = {
+        "schema_version", "record_type", "run_id", "cell_barcode",
+        "taxonomy", "taxonomy_evidence", "asv", "targets", "final_filter",
+    }
+    for cell in all_cells:
+        _require_keys(cell, required_cell_fields, set(), "candidate cell")
+        _require(
+            cell["schema_version"] == SCHEMA_VERSION
+            and cell["record_type"] == "candidate_cell"
+            and cell["run_id"] == run_id,
+            "Invalid candidate-cell identity fields")
+        barcode = cell["cell_barcode"]
+        _require(
+            isinstance(barcode, str) and barcode
+            and barcode not in candidate_barcodes,
+            f"Duplicate/invalid candidate barcode {barcode}")
+        candidate_barcodes.add(barcode)
+        final_filter = cell["final_filter"]
+        _require_keys(
+            final_filter, {"passed", "stage", "reason"}, set(),
+            f"final filter for {barcode}")
+        _require(
+            isinstance(final_filter["passed"], bool)
+            and isinstance(final_filter["stage"], str),
+            f"Invalid final filter for {barcode}")
+        _require(
+            final_filter["reason"] is None
+            or isinstance(final_filter["reason"], str),
+            f"Invalid final-filter reason for {barcode}")
+        if final_filter["stage"] in {"final", "asv_abundance"}:
+            asv_id = cell["asv"]["asv_id"]
+            _require(
+                isinstance(asv_id, str) and asv_id,
+                f"Abundance-stage cell {barcode} has no ASV")
+            abundance_barcodes.add(barcode)
+            candidate_asv_references[asv_id] += 1
+        if final_filter["passed"]:
+            _require(
+                final_filter["stage"] == "final"
+                and final_filter["reason"] is None,
+                f"Passed candidate cell {barcode} has invalid filter state")
+            passed_barcodes.add(barcode)
+        else:
+            _require(
+                final_filter["reason"] is not None,
+                f"Excluded candidate cell {barcode} has no reason")
+
+    candidate_by_barcode = {
+        cell["cell_barcode"]: cell for cell in all_cells}
+    final_by_barcode = {cell["cell_barcode"]: cell for cell in cells}
+    _require(
+        passed_barcodes == set(final_by_barcode),
+        "Passed candidate cells do not equal final cells")
+    for barcode, final_cell in final_by_barcode.items():
+        candidate = candidate_by_barcode[barcode]
+        _require(
+            candidate["asv"] == final_cell["asv"]
+            and candidate["targets"] == final_cell["targets"]
+            and candidate["taxonomy"] == final_cell["taxonomy"]
+            and candidate["taxonomy_evidence"]
+                == final_cell["taxonomy_evidence"],
+            f"Final cell {barcode} differs from its candidate record")
+
+    candidate_asv_ids = set()
+    passed_asv_ids = set()
+    denominator = len(abundance_barcodes)
+    minimum_fraction = run_summary["parameters"]["asv"][
+        "final_minimum_cell_fraction"]
+    minimum_count = run_summary["parameters"]["asv"][
+        "final_minimum_cell_count"]
+    for asv in all_asvs:
+        required = {
+            "schema_version", "record_type", "run_id", "asv_id",
+            "core_sequence", "candidate_cell_count",
+            "candidate_cell_fraction", "final_filter",
+        }
+        _require_keys(asv, required, set(), "candidate ASV")
+        _require(
+            asv["schema_version"] == SCHEMA_VERSION
+            and asv["record_type"] == "candidate_asv"
+            and asv["run_id"] == run_id,
+            "Invalid candidate-ASV identity fields")
+        asv_id = asv["asv_id"]
+        _require(
+            asv_id not in candidate_asv_ids,
+            f"Duplicate candidate ASV {asv_id}")
+        candidate_asv_ids.add(asv_id)
+        count = candidate_asv_references[asv_id]
+        _require(
+            asv["candidate_cell_count"] == count > 0,
+            f"Candidate ASV count mismatch for {asv_id}")
+        _require(
+            math.isclose(
+                asv["candidate_cell_fraction"], count / denominator,
+                rel_tol=0, abs_tol=1e-15),
+            f"Candidate ASV fraction mismatch for {asv_id}")
+        expected_pass = (
+            count >= minimum_count and count / denominator >= minimum_fraction)
+        _require(
+            asv["final_filter"]["passed"] == expected_pass,
+            f"Candidate ASV filter mismatch for {asv_id}")
+        if expected_pass:
+            passed_asv_ids.add(asv_id)
+    _require(
+        candidate_asv_ids == set(candidate_asv_references),
+        "Candidate ASV foreign keys do not resolve exactly")
+    _require(
+        passed_asv_ids == {asv["asv_id"] for asv in asvs},
+        "Passed candidate ASVs do not equal final ASVs")
+    funnel = run_summary["barcode_funnel"]
+    _require(
+        funnel["before_asv_filter"] == len(all_cells),
+        "Candidate-cell count mismatch in run summary")
+    _require(
+        funnel["before_asv_abundance_filter"] == denominator,
+        "ASV-abundance denominator mismatch in run summary")
+    _require(
+        funnel["asv_abundance_filtered_cells"]
+        == denominator - len(cells),
+        "ASV-abundance excluded-cell count mismatch")
+    asv_summary = run_summary["asv_summary"]
+    _require(
+        asv_summary["before_abundance_filter_count"] == len(all_asvs)
+        and asv_summary["filtered_out_asv_count"]
+            == len(all_asvs) - len(asvs),
+        "Candidate/final ASV counts do not balance")
+
+
+
 def _write_jsonl(path: Path, records: list[dict]):
     with path.open("w", encoding="utf-8") as handle:
         for record in records:
@@ -732,9 +1080,20 @@ def write_canonical_results(args) -> dict:
     run_id = runtime_config["run_id"]
     target_names = [item["target_name"] for item in runtime_config["target_panel"]]
     sequence_catalog = _load_sequence_catalog(args.sequence_list)
-    cells = build_cells(
+    eligible_cells = build_cells(
         run_id, args.raw_cell_table, args.filtered_counts, args.final_cell_table,
         target_names, sequence_catalog, args.sequence_qc)
+    asv_parameters = runtime_config["parameters"]["asv"]
+    cells, passing_asvs, candidate_counts = apply_final_asv_filter(
+        eligible_cells,
+        asv_parameters["final_minimum_cell_fraction"],
+        asv_parameters["final_minimum_cell_count"],
+    )
+    all_cells = build_all_cells(
+        run_id, args.candidate_cell_table, eligible_cells,
+        passing_asvs, target_names)
+    all_asvs = build_all_asvs(
+        run_id, candidate_counts, passing_asvs, args.global_asv)
     asvs = build_asvs(run_id, cells, args.global_asv)
     target_sequences = None
     if runtime_config["parameters"]["target_sequence_reconstruction"]["performed"]:
@@ -743,17 +1102,24 @@ def write_canonical_results(args) -> dict:
             args.reference_matches)
     run_summary = build_run_summary(
         run_id, runtime_config, cells, asvs,
+        eligible_cells, all_cells, all_asvs,
         args.read_qc_stats, args.barcode_cluster_stats,
         args.barcode_filter_stats, args.asv_stats, args.manifest,
         (args.packet_16s, args.packet_target, args.packet_unclassified),
         args.target_filter_stats, args.phase_variation)
     validate_canonical(run_id, cells, asvs, target_sequences, run_summary)
+    validate_provenance(
+        run_id, all_cells, all_asvs, cells, asvs, run_summary)
 
     staging = Path(args.staging_dir)
     staging.mkdir(parents=True, exist_ok=False)
+    all_cell_tmp = staging / "all_cells.jsonl"
+    all_asv_tmp = staging / "all_asvs.jsonl"
     cell_tmp = staging / "cells.jsonl"
     asv_tmp = staging / "asvs.jsonl"
     run_tmp = staging / "run_summary.json"
+    _write_jsonl(all_cell_tmp, all_cells)
+    _write_jsonl(all_asv_tmp, all_asvs)
     _write_jsonl(cell_tmp, cells)
     _write_jsonl(asv_tmp, asvs)
     if target_sequences is not None:
@@ -761,28 +1127,41 @@ def write_canonical_results(args) -> dict:
     _write_json(run_tmp, run_summary)
 
     # Validate the serialized representation, not only the in-memory objects.
-    reloaded_cells = [json.loads(line) for line in cell_tmp.read_text().splitlines()]
-    reloaded_asvs = [json.loads(line) for line in asv_tmp.read_text().splitlines()]
+    reloaded_all_cells = [
+        json.loads(line) for line in all_cell_tmp.read_text().splitlines()]
+    reloaded_all_asvs = [
+        json.loads(line) for line in all_asv_tmp.read_text().splitlines()]
+    reloaded_cells = [
+        json.loads(line) for line in cell_tmp.read_text().splitlines()]
+    reloaded_asvs = [
+        json.loads(line) for line in asv_tmp.read_text().splitlines()]
     target_path = staging / "target_sequences.jsonl"
     reloaded_targets = (
         [json.loads(line) for line in target_path.read_text().splitlines()]
         if target_path.exists() else None)
     reloaded_summary = json.loads(run_tmp.read_text())
-    validate_canonical(run_id, reloaded_cells, reloaded_asvs, reloaded_targets, reloaded_summary)
+    validate_canonical(
+        run_id, reloaded_cells, reloaded_asvs,
+        reloaded_targets, reloaded_summary)
+    validate_provenance(
+        run_id, reloaded_all_cells, reloaded_all_asvs,
+        reloaded_cells, reloaded_asvs, reloaded_summary)
 
     for path in staging.iterdir():
         os.replace(path, Path(args.output_dir) / path.name)
     staging.rmdir()
     return {
+        "all_cells": len(all_cells), "all_asvs": len(all_asvs),
         "cells": len(cells), "asvs": len(asvs),
         "target_sequences": len(target_sequences or []),
     }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Build v3.0.0 canonical results")
+    parser = argparse.ArgumentParser(description="Build v3.1.0 canonical results")
     for name in (
-        "runtime_config", "raw_cell_table", "filtered_counts", "final_cell_table",
+        "runtime_config", "candidate_cell_table", "raw_cell_table",
+        "filtered_counts", "final_cell_table",
         "global_asv", "read_qc_stats", "barcode_cluster_stats",
         "barcode_filter_stats", "asv_stats", "manifest", "packet_16s",
         "packet_target", "packet_unclassified", "target_filter_stats",
@@ -796,7 +1175,8 @@ def main():
     args = parser.parse_args()
     counts = write_canonical_results(args)
     print(
-        "Canonical v3.0.0 validated: "
+        "Canonical v3.1.0 validated: "
+        f"all_cells={counts['all_cells']} all_asvs={counts['all_asvs']} "
         f"cells={counts['cells']} asvs={counts['asvs']} "
         f"target_sequences={counts['target_sequences']}", flush=True)
 

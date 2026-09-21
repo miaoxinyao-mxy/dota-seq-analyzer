@@ -51,7 +51,7 @@ class CanonicalResultTests(unittest.TestCase):
             "noise_cutoff_ratio": 0.05,
         }
         return {
-            "schema_version": "3.0.0", "record_type": "run_summary",
+            "schema_version": "3.1.0", "record_type": "run_summary",
             "run_id": "550e8400-e29b-41d4-a716-446655440000",
             "status": "completed",
             "software": {"name": "dota-seq-analyzer", "version": "0.1.0", "git_commit": None},
@@ -64,16 +64,16 @@ class CanonicalResultTests(unittest.TestCase):
                 "barcode_clustering": {"barcode_length": 20, "maximum_shift": 1},
                 "cell_taxonomy_filtering": {"minimum_16s_reads": 5, "maximum_contamination": 0.1, "minimum_cells_per_taxon": 10},
                 "taxonomy_mle": mle,
-                "asv": {"r1_start": 30, "r1_end": 120, "r2_start": 70, "r2_end": 120, "maximum_distance": 3, "maximum_shift": 3, "minimum_reads": 5, "mixed_ratio_threshold": 0.1, "filter_corrupted_single_asv": False, "taxonomy_conflict_minimum_cells": 10, "taxonomy_conflict_dominant_phylum_fraction": 0.99},
+                "asv": {"r1_start": 30, "r1_end": 120, "r2_start": 70, "r2_end": 120, "maximum_distance": 3, "maximum_shift": 3, "minimum_reads": 5, "mixed_ratio_threshold": 0.1, "filter_corrupted_single_asv": False, "taxonomy_conflict_minimum_cells": 10, "taxonomy_conflict_dominant_phylum_fraction": 0.99, "final_minimum_cell_fraction": 0.005, "final_minimum_cell_count": 10},
                 "target_background_filtering": {"alpha": 0.05},
                 "target_sequence_reconstruction": {"performed": True, "maximum_shift": 2, "maximum_mismatches": 0, "alpha": 0.05, "r1_start": 30, "r1_end": 120, "r2_start": 70, "r2_end": 120, "include_all_targets": False, "mle": mle.copy()},
             },
             "read_qc": {"raw_read_pairs": 0, "passed_read_pairs": 0, "filtered_read_pairs": 0, "rejected": {"read_length_or_quality_length": 0, "mean_phred": 0, "barcode_length": 0, "barcode_q25": 0}},
             "read_classification": {"accepted_16s_reads": 0, "target_reads": 0, "unclassified_reads": 0},
             "16s_r1_primer_starts": {"0": 0},
-            "barcode_funnel": {"raw_unique_barcodes": 1, "clustered_barcodes": 1, "after_stage1_taxonomy_filter": 1, "after_minimum_cells_per_taxon": 1, "before_asv_filter": 1, "after_asv_status_filter": 1, "asv_taxonomy_conflicts_removed": 0, "final_cells": 1},
-            "asv_summary": {"final_asv_count": 1},
-            "target_filtering_summary": [{"target_name": "TEM", "original_positive_cells": 1, "filtered_out_cells": 0, "remaining_positive_cells": 1, "retention_percent": 100.0}],
+            "barcode_funnel": {"raw_unique_barcodes": 1, "clustered_barcodes": 1, "after_stage1_taxonomy_filter": 1, "after_minimum_cells_per_taxon": 1, "before_asv_filter": 1, "after_asv_status_filter": 1, "asv_taxonomy_conflicts_removed": 0, "before_asv_abundance_filter": 1, "asv_abundance_filtered_cells": 0, "final_cells": 1},
+            "asv_summary": {"before_abundance_filter_count": 1, "filtered_out_asv_count": 0, "final_asv_count": 1},
+            "target_filtering_summary": [{"target_name": "TEM", "original_positive_cells": 1, "filtered_out_cells": 0, "remaining_positive_cells": 1, "asv_abundance_excluded_positive_cells": 0, "final_positive_cells": 1, "retention_percent": 100.0}],
         }
 
     def test_counts_are_recalculated_from_final_cell_references(self):
@@ -127,6 +127,48 @@ class CanonicalResultTests(unittest.TestCase):
         del summary["parameters"]["read_qc"]["minimum_read_length"]
         with self.assertRaisesRegex(ValueError, "minimum_read_length"):
             canonical.validate_canonical("550e8400-e29b-41d4-a716-446655440000", cells, asvs, targets, summary)
+
+
+    def test_final_asv_filter_requires_count_and_fraction_thresholds(self):
+        cells = [
+            {"cell_barcode": f"cell_{asv_id}_{index}", "asv": {"asv_id": asv_id}}
+            for asv_id, count in {
+                "ASV_1": 20, "ASV_2": 19, "ASV_3": 10, "ASV_4": 3951,
+            }.items()
+            for index in range(count)
+        ]
+        final, passing, counts = canonical.apply_final_asv_filter(cells)
+        self.assertEqual(len(cells), 4000)
+        self.assertEqual(passing, {"ASV_1", "ASV_4"})
+        self.assertEqual(len(final), 3971)
+        self.assertEqual(counts["ASV_3"], 10)
+
+    def test_candidate_records_preserve_excluded_cells(self):
+        eligible = canonical.build_cells(
+            "550e8400-e29b-41d4-a716-446655440000",
+            self.root / "raw.tsv", self.root / "filtered.tsv",
+            self.root / "final.tsv", ["TEM"],
+            canonical._load_sequence_catalog(self.root / "sequences.tsv"), None)
+        excluded = self.raw.copy()
+        excluded.index = ["C" * 20]
+        excluded["Assigned_core_asv"] = None
+        excluded["Status"] = "low_depth"
+        candidates = pd.concat([self.raw, excluded])
+        candidates["Final_filter_stage"] = [None, "asv_status_quality"]
+        candidates["Final_filter_reason"] = [None, "low_depth"]
+        candidates.to_csv(
+            self.root / "candidates.tsv", sep="\t", index_label="Barcode")
+
+        all_cells = canonical.build_all_cells(
+            "550e8400-e29b-41d4-a716-446655440000",
+            self.root / "candidates.tsv", eligible, {"ASV_1"}, ["TEM"])
+        self.assertEqual(len(all_cells), 2)
+        self.assertTrue(all_cells[0]["final_filter"]["passed"])
+        self.assertEqual(
+            all_cells[1]["final_filter"],
+            {"passed": False, "stage": "asv_status_quality", "reason": "low_depth"})
+        self.assertEqual(
+            all_cells[1]["targets"][0]["assignment_type"], "not_evaluated")
 
 
 if __name__ == "__main__":
