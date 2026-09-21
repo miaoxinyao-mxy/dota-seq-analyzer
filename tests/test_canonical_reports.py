@@ -36,10 +36,12 @@ class CanonicalReportTests(unittest.TestCase):
             "target_filtering_summary": [
                 {"target_name": "TEM", "original_positive_cells": 1,
                  "filtered_out_cells": 1, "remaining_positive_cells": 0,
-                 "retention_percent": 0.0},
-                {"target_name": "PV", "original_positive_cells": 1,
-                 "filtered_out_cells": 0, "remaining_positive_cells": 1,
-                 "retention_percent": 100.0}],
+                 "asv_abundance_excluded_positive_cells": 0,
+                 "final_positive_cells": 0, "retention_percent": 0.0},
+                {"target_name": "PV", "original_positive_cells": 2,
+                 "filtered_out_cells": 0, "remaining_positive_cells": 2,
+                 "asv_abundance_excluded_positive_cells": 1,
+                 "final_positive_cells": 1, "retention_percent": 50.0}],
             "phase_variation_summary": {"cell_calls": 1,
                                         "calls": {"ssr_detected": 1}},
         }
@@ -99,6 +101,13 @@ class CanonicalReportTests(unittest.TestCase):
         references = pd.read_csv(self.output / "reference_matches.tsv", sep="\t")
         self.assertEqual(references.loc[0, "read1_seq"], "CCCC")
         self.assertEqual(references.loc[0, "read1_percent_identity"], "100%")
+        target_summary = pd.read_csv(
+            self.output / "target_summary.tsv", sep="\t")
+        pv_summary = target_summary[target_summary["ARG"] == "PV"].iloc[0]
+        self.assertEqual(pv_summary["Original"], 2)
+        self.assertEqual(pv_summary["Filtered Out"], 1)
+        self.assertEqual(pv_summary["Remaining"], 1)
+        self.assertEqual(pv_summary["% Retention"], 50.0)
 
     def test_optional_reports_are_absent_when_not_requested(self):
         self.run_summary["inputs"]["reference_fasta"] = None

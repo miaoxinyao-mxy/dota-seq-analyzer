@@ -39,6 +39,10 @@ ASV_R2_START = 70
 ASV_R2_END = 120
 ASV_TAXONOMY_CONFLICT_MIN_CELLS = 10
 ASV_TAXONOMY_CONFLICT_DOMINANCE = 0.99
+# 2026-09-21: Define final ASV support independently of dataset size.
+# Reason: final reporting should exclude both rare absolute and rare relative ASVs.
+ASV_FINAL_MIN_CELL_FRACTION = 0.005
+ASV_FINAL_MIN_CELL_COUNT = 10
 
 # Target background filtering and reconstructed target sequences
 TARGET_BACKGROUND_ALPHA = 0.05
